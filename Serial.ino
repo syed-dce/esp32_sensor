@@ -29,12 +29,24 @@ void ExecuteCommand(char *Line)
       }
   }
 
+  if (strcasecmp(Command, "DomoticzGet") == 0)
+  {
+    float value=0;
+    if (Domoticz_getData(Par2, &value))
+      {
+        Serial.print("DomoticzGet ");
+        Serial.println(value);
+      }
+    else
+      Serial.println("Error getting data");
+  }
+
   if (strcasecmp(Command, "UDP") == 0)
   {
     if (GetArgv(Line, TmpStr1, 2))
       {
         IPAddress broadcastIP(255,255,255,255);
-        portTX.beginPacket(broadcastIP,UDP_LISTEN_PORT);
+        portTX.beginPacket(broadcastIP,Settings.UDPPort);
         portTX.write(TmpStr1);
         portTX.endPacket();
       }
@@ -375,6 +387,8 @@ void ResetFactory(void)
   Settings.Syslog_IP[1]    = 0;
   Settings.Syslog_IP[2]    = 0;
   Settings.Syslog_IP[3]    = 0;
+  Settings.UDPPort         = 0;
+  Settings.Switch1         = DEFAULT_SWITCH1_IDX;
   Save_Settings();
   WifiDisconnect();
   ESP.reset();
