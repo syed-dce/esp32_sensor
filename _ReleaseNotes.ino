@@ -66,4 +66,36 @@
 // Added syslog level for detailed logging
 // Added menu buttons in webgui and stuctured data as HTML tables
 
+// R011 12-07-2015
+// Changed javascript link buttons into CSS button styled href links
+// Fixed Main button, only worked on IE.
+// Changed connectionFailures counting
+// Reboot from main loop instead of web event callback
+// Changed logging configuration
+// BaudRate can be configured through webgui, defaults to 115200
+// Added Serial.setDebugOutput(true) if serial loglevel = 4 (debug_more level)
+// Added telnet protocol to send variable data to a Nodo Mega controller
+// Added webgui I2C scanner
+// Added webgui Wifi scanner
+// Fixed bug in settingssave on devices
+// Added delay(1) in Domoticz_sendData, while available loop
+
+// R012 07-08-2015
+// IMPORTANT NOTICE: this release needs ESP Package version 1.6.5-947-g39819f0, built on Jul 23, 2015)
+// If udp port = 0 no actions!
+// Used sprintf_P to save more RAM
+// Added login page and admin password
+// Added hardware custom gpio pin selection
+// Added sanity check on BMP085 pressure values
+
+// R013 15-08-2015
+// Added configurable message delay in ms (delay between messages to controller)
+// Changed login password field to type 'password'
+// Fixed io pin settings for Dallas/DHT for inconsecutive pin configuration (ESP-01)
+// Support for ThingsSpeak "controller" (webservice)
+
+// R014 20-08-2015
+// Redesigned device configuration mechanisme
+// Changed password timeout to 5 minutes
+// Added direct GPIO output control without password request
 
