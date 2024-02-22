@@ -61,31 +61,37 @@ boolean Domoticz_getData(int idx, float *data)
 //********************************************************************************
 // Interface for Sending to Controllers
 //********************************************************************************
-boolean sendData(byte sensorType, int idx, byte varIndex)
+boolean sendData(byte TaskIndex, byte sensorType, int idx, byte varIndex)
 {
   switch (Settings.Protocol)
   {
-    case 1:
+    case PROTOCOL_DOMOTICZ_HTTP:
       Domoticz_sendData(sensorType, idx, varIndex);
       break;
-    case 2:
+    case PROTOCOL_DOMOTICZ_MQTT:
       Domoticz_sendDataMQTT(sensorType, idx, varIndex);
       break;
-    case 3:
+    case PROTOCOL_NODO_TELNET:
       NodoTelnet_sendData(sensorType, idx, varIndex);
-    case 4:
+    case PROTOCOL_THINGSPEAK:
       ThingsSpeak_sendData(sensorType, idx, varIndex);
+      break;
+    case PROTOCOL_OPENHAB_MQTT:
+      OpenHAB_sendDataMQTT(TaskIndex, sensorType, idx, varIndex);
+      break;
+    case PROTOCOL_PIDOME_MQTT:
+      PiDome_sendDataMQTT(TaskIndex, sensorType, idx, varIndex);
       break;
   }
   if (Settings.MessageDelay != 0)
-    {
-      char log[30];
-      sprintf_P(log, PSTR("HTTP : Delay %u ms"), Settings.MessageDelay);
-      addLog(LOG_LEVEL_DEBUG_MORE,log);
-      unsigned long timer = millis() + Settings.MessageDelay;
-      while (millis() < timer)
-        backgroundtasks();
-    }
+  {
+    char log[30];
+    sprintf_P(log, PSTR("HTTP : Delay %u ms"), Settings.MessageDelay);
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
+    unsigned long timer = millis() + Settings.MessageDelay;
+    while (millis() < timer)
+      backgroundtasks();
+  }
 }
 //#endif
 
@@ -100,7 +106,7 @@ boolean Domoticz_sendData(byte sensorType, int idx, byte varIndex)
   sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
 
   sprintf_P(log, PSTR("%s%s"), "HTTP : connecting to ", host);
-  addLog(LOG_LEVEL_DEBUG,log);
+  addLog(LOG_LEVEL_DEBUG, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -111,7 +117,7 @@ boolean Domoticz_sendData(byte sensorType, int idx, byte varIndex)
   if (!client.connect(host, Settings.ControllerPort))
   {
     connectionFailures++;
-    addLog(LOG_LEVEL_ERROR,(char*)"HTTP : connection failed");
+    addLog(LOG_LEVEL_ERROR, (char*)"HTTP : connection failed");
     if (printToWeb)
       printWebString += F("connection failed<BR>");
     return false;
@@ -127,35 +133,35 @@ boolean Domoticz_sendData(byte sensorType, int idx, byte varIndex)
   {
     case 1:                      // single value sensor, used for Dallas, BH1750, etc
       url += "&svalue=";
-      url += UserVar[varIndex - 1];
+      url += UserVar[varIndex];
       break;
     case 2:                      // temp + hum + hum_stat, used for DHT11
       url += "&svalue=";
-      url += UserVar[varIndex - 1];
-      url += ";";
       url += UserVar[varIndex];
+      url += ";";
+      url += UserVar[varIndex + 1];
       url += ";0";
       break;
     case 3:                      // temp + hum + hum_stat + bar + bar_fore, used for BMP085
       url += "&svalue=";
-      url += UserVar[varIndex - 1];
-      url += ";0;0;";
       url += UserVar[varIndex];
+      url += ";0;0;";
+      url += UserVar[varIndex + 1];
       url += ";0";
       break;
     case 10:                      // switch
       url = F("/json.htm?type=command&param=switchlight&idx=");
       url += idx;
       url += "&switchcmd=";
-      if (UserVar[varIndex - 1] == 0)
+      if (UserVar[varIndex] == 0)
         url += "Off";
       else
         url += "On";
       break;
   }
 
-  url.toCharArray(log, 79);
-  addLog(LOG_LEVEL_DEBUG_MORE,log);
+  url.toCharArray(log, 80);
+  addLog(LOG_LEVEL_DEBUG_MORE, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -173,29 +179,19 @@ boolean Domoticz_sendData(byte sensorType, int idx, byte varIndex)
 
   // Read all the lines of the reply from server and print them to Serial
   while (client.available()) {
-    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-      {
-        sprintf_P(log,PSTR("C1 WS %u FM %u"),WiFi.status(),FreeMem());
-        Serial.println(log);
-      }
     String line = client.readStringUntil('\n');
-    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-      {
-        sprintf_P(log,PSTR("C2 WS %u FM %u"),WiFi.status(),FreeMem());
-        Serial.println(log);
-      }
-    line.toCharArray(log,79);
-    addLog(LOG_LEVEL_DEBUG_MORE,log);
+    line.toCharArray(log, 80);
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
     if (line.substring(0, 15) == "HTTP/1.1 200 OK")
     {
-      addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : Succes!");
+      addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : Succes!");
       if (printToWeb)
         printWebString += F("Success<BR>");
       success = true;
     }
     delay(1);
   }
-  addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : closing connection");
+  addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : closing connection");
   if (printToWeb)
     printWebString += F("closing connection<BR>");
 
@@ -216,7 +212,7 @@ boolean NodoTelnet_sendData(byte sensorType, int var, byte varIndex)
   sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
 
   sprintf_P(log, PSTR("%s%s"), "TELNT: connecting to ", host);
-  addLog(LOG_LEVEL_DEBUG,log);
+  addLog(LOG_LEVEL_DEBUG, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -227,7 +223,7 @@ boolean NodoTelnet_sendData(byte sensorType, int var, byte varIndex)
   if (!client.connect(host, Settings.ControllerPort))
   {
     connectionFailures++;
-    addLog(LOG_LEVEL_ERROR,(char*)"TELNT: connection failed");
+    addLog(LOG_LEVEL_ERROR, (char*)"TELNT: connection failed");
     if (printToWeb)
       printWebString += F("connection failed<BR>");
     return false;
@@ -235,7 +231,7 @@ boolean NodoTelnet_sendData(byte sensorType, int var, byte varIndex)
   if (connectionFailures)
     connectionFailures--;
 
-  float value = UserVar[varIndex - 1];
+  float value = UserVar[varIndex];
   // We now create a URI for the request
   String url = F("variableset ");
   url += var;
@@ -252,30 +248,30 @@ boolean NodoTelnet_sendData(byte sensorType, int var, byte varIndex)
 
   timer = millis() + 1000;
   while (client.available() && millis() < timer && !success)
-    { 
-      String line = client.readStringUntil('\n');
-      Serial.println(line);
-      if (line.substring(0, 20) == "Enter your password:")
-        {
-        success = true;
-        Serial.println("Password request ok");
-        }
-      delay(1);
+  {
+    String line = client.readStringUntil('\n');
+    Serial.println(line);
+    if (line.substring(0, 20) == "Enter your password:")
+    {
+      success = true;
+      Serial.println("Password request ok");
     }
-    
+    delay(1);
+  }
+
   Serial.println("Sending pw");
   client.println(Settings.ControllerPassword);
   delay(100);
   while (client.available())
     Serial.write(client.read());
- 
+
   Serial.println("Sending cmd");
   client.print(url);
   delay(10);
   while (client.available())
     Serial.write(client.read());
 
-  addLog(LOG_LEVEL_DEBUG,(char*)"TELNT: closing connection");
+  addLog(LOG_LEVEL_DEBUG, (char*)"TELNT: closing connection");
   if (printToWeb)
     printWebString += F("closing connection<BR>");
 
@@ -295,7 +291,6 @@ void syslog(char *message)
     char str[80];
     str[0] = 0;
     sprintf_P(str, PSTR("<7>ESP Unit: %u : %s"), Settings.Unit, message);
-    addLog(LOG_LEVEL_DEBUG,str);
     portTX.write(str);
     portTX.endPacket();
   }
@@ -308,7 +303,8 @@ void syslog(char *message)
 // handle MQTT messages
 void callback(const MQTT::Publish& pub) {
   String message = pub.payload_string();
-  MQTTMessage(&message);
+  String topic = pub.topic();
+  MQTTMessage(&topic, &message);
 }
 
 
@@ -330,7 +326,23 @@ void MQTTConnect()
     if (MQTTclient.connect(clientid))
     {
       Serial.println(F("MQTT : Connected to broker"));
-      MQTTclient.subscribe("domoticz/out");
+      switch (Settings.Protocol)
+      {
+        case PROTOCOL_DOMOTICZ_MQTT:
+          MQTTclient.subscribe("domoticz/out");
+          break;
+        case PROTOCOL_OPENHAB_MQTT:
+          {
+            String pubname = "/";
+            pubname += Settings.Name;
+            pubname += "/#";
+            MQTTclient.subscribe(pubname);
+            break;
+          }
+        case PROTOCOL_PIDOME_MQTT:
+          MQTTclient.subscribe("/Home/#");
+          break;
+      }
       break;
     }
     else
@@ -344,54 +356,114 @@ void MQTTConnect()
 /*********************************************************************************************\
  * Parse incoming MQTT message
 \*********************************************************************************************/
-void MQTTMessage(String *message)
+void MQTTMessage(String *topic, String *message)
 {
-  char json[512];
-  json[0] = 0;
-  message->toCharArray(json, 511);
-  //  if (Settings.Debug == 3)
-  //    Serial.println(json);
-
-  StaticJsonBuffer<512> jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-
-  //for (JsonObject::iterator it=root.begin(); it!=root.end(); ++it)
-  //{
-  //  Serial.println(it->key);
-  //  Serial.println(it->value.asString());
-  //}
-
-  if (root.success())
+  // Split topic into array
+  String tmpTopic = topic->substring(1);
+  String topicSplit[10];
+  int SlashIndex = tmpTopic.indexOf('/');
+  byte count = 0;
+  while (SlashIndex > 0 && count < 10 - 1)
   {
-    long idx = root["idx"];
-    float nvalue = root["nvalue"];
-    long nvaluealt = root["nvalue"];
-    const char* name = root["name"];
-    const char* svalue = root["svalue"];
-    const char* svalue1 = root["svalue1"];
-    const char* svalue2 = root["svalue2"];
-    const char* svalue3 = root["svalue3"];
-
-    if (nvalue == 0)
-      nvalue = nvaluealt;
-
-    Serial.print(F("MQTT : idx="));
-    Serial.print(idx);
-    Serial.print(" name=");
-    Serial.print(name);
-    Serial.print(" nvalue=");
-    Serial.print(nvalue);
-    Serial.print(" svalue=");
-    Serial.print(svalue);
-    Serial.print(" svalue1=");
-    Serial.print(svalue1);
-    Serial.print(" svalue2=");
-    Serial.println(svalue2);
-    Serial.print(" svalue3=");
-    Serial.println(svalue3);
+    topicSplit[count] = tmpTopic.substring(0, SlashIndex);
+    tmpTopic = tmpTopic.substring(SlashIndex + 1);
+    SlashIndex = tmpTopic.indexOf('/');
+    count++;
   }
-  else
-    Serial.println(F("MQTT : json parse error"));
+  topicSplit[count] = tmpTopic;
+
+  //for (byte x = 0; x <= count; x++)
+    //Serial.println(topicSplit[x]);
+
+  switch (Settings.Protocol)
+  {
+    case PROTOCOL_DOMOTICZ_MQTT:
+      {
+        char json[512];
+        json[0] = 0;
+        message->toCharArray(json, 512);
+
+        StaticJsonBuffer<512> jsonBuffer;
+        JsonObject& root = jsonBuffer.parseObject(json);
+
+        if (root.success())
+        {
+          long idx = root["idx"];
+          float nvalue = root["nvalue"];
+          long nvaluealt = root["nvalue"];
+          const char* name = root["name"];
+          const char* svalue = root["svalue"];
+          const char* svalue1 = root["svalue1"];
+          const char* svalue2 = root["svalue2"];
+          const char* svalue3 = root["svalue3"];
+
+          if (nvalue == 0)
+            nvalue = nvaluealt;
+
+          Serial.print(F("MQTT : idx="));
+          Serial.print(idx);
+          Serial.print(" name=");
+          Serial.print(name);
+          Serial.print(" nvalue=");
+          Serial.print(nvalue);
+          Serial.print(" svalue=");
+          Serial.print(svalue);
+          Serial.print(" svalue1=");
+          Serial.print(svalue1);
+          Serial.print(" svalue2=");
+          Serial.println(svalue2);
+          Serial.print(" svalue3=");
+          Serial.println(svalue3);
+        }
+        else
+          Serial.println(F("MQTT : json parse error"));
+        break;
+      }
+    case PROTOCOL_OPENHAB_MQTT:
+      {
+        String cmd = topicSplit[1];
+        int pin = topicSplit[2].toInt();
+        if (cmd == "gpio")
+        {
+          int value = message->toFloat();
+          char cmd[80];
+          sprintf_P(cmd, PSTR("gpio,%u,%u"), pin, value);
+          Serial.println(cmd);
+          #ifdef ESP_CONNEXIO
+            ExecuteLine(cmd, VALUE_SOURCE_SERIAL);
+          #endif
+          #ifdef ESP_EASY
+            ExecuteCommand(cmd);
+          #endif
+        }
+        break;
+      }
+
+
+    case PROTOCOL_PIDOME_MQTT:
+      {
+        String name = topicSplit[4];
+        String cmd = topicSplit[5];
+        int pin = topicSplit[6].toInt();
+        if (name == Settings.Name)
+        {
+          if (cmd == "gpio")
+          {
+            int value = (*message == "true");
+            char cmd[80];
+            sprintf_P(cmd, PSTR("gpio,%u,%u"), pin, value);
+            Serial.println(cmd);
+            #ifdef ESP_CONNEXIO
+              ExecuteLine(cmd, VALUE_SOURCE_SERIAL);
+            #endif
+            #ifdef ESP_EASY
+              ExecuteCommand(cmd);
+            #endif
+          }
+        }
+        break;
+      }
+  }
 }
 
 
@@ -413,62 +485,158 @@ boolean Domoticz_sendDataMQTT(byte sensorType, int idx, byte varIndex)
   {
     case 1:                      // single value sensor, used for Dallas, BH1750, etc
       root["nvalue"] = 0;
-      values = UserVar[varIndex - 1];
-      values.toCharArray(str, 79);
+      values = UserVar[varIndex];
+      values.toCharArray(str, 80);
       root["svalue"] =  str;
       break;
     case 2:                      // temp + hum + hum_stat, used for DHT11
       root["nvalue"] = 0;
-      values  = UserVar[varIndex - 1];
+      values  = UserVar[varIndex];
       values += ";";
-      values += UserVar[varIndex];
+      values += UserVar[varIndex + 1];
       values += ";0";
-      values.toCharArray(str, 79);
+      values.toCharArray(str, 80);
       root["svalue"] =  str;
       break;
     case 3:                      // temp + hum + hum_stat + bar + bar_fore, used for BMP085
       root["nvalue"] = 0;
-      values  = UserVar[varIndex - 1];
+      values  = UserVar[varIndex];
       values += ";0;0;";
-      values += UserVar[varIndex];
+      values += UserVar[varIndex + 1];
       values += ";0";
-      values.toCharArray(str, 79);
+      values.toCharArray(str, 80);
       root["svalue"] =  str;
       break;
     case 10:                      // switch
       root["command"] = "switchlight";
-      if (UserVar[varIndex - 1] == 0)
+      if (UserVar[varIndex] == 0)
         root["switchcmd"] = "Off";
       else
         root["switchcmd"] = "On";
       break;
   }
 
-  //  JsonArray& data = root.createNestedArray("data");
-  //  data.add(48.756080, 6);  // 6 is the number of decimals to print
-  //  data.add(2.302038, 6);   // if not specified, 2 digits are printed
-
-  // test drive mqtt
-  //String json = "{\"idx\": 161, \"nvalue\": 1, \"svalue\": \"";
-  //json += millis()/1000;
-  //json += "\" }";
-  //Serial.println(json);
-
   char json[256];
   root.printTo(json, sizeof(json));
   Serial.print("MQTT : ");
   Serial.println(json);
-  addLog(LOG_LEVEL_DEBUG,json);
+  addLog(LOG_LEVEL_DEBUG, json);
   if (!MQTTclient.publish("domoticz/in", json))
   {
     Serial.println(F("MQTT publish failed"));
     MQTTConnect();
     connectionFailures++;
   }
-  else
-    if (connectionFailures)
-      connectionFailures--;
+  else if (connectionFailures)
+    connectionFailures--;
 }
+
+/*********************************************************************************************\
+ * Send data to Domoticz using MQTT message
+\*********************************************************************************************/
+boolean OpenHAB_sendDataMQTT(byte TaskIndex, byte sensorType, int idx, byte varIndex)
+{
+  // MQTT publish structure:
+  // /<unit name>/<task name>/<value name>/state
+  // <unit name> and <task name> are web configurable by the user
+  // value name is prefixed in the device section for each type of device
+
+  char str[80];
+
+  String pubname = "";
+  String value = "";
+
+  switch (sensorType)
+  {
+    case 1:                      // single value sensor, used for Dallas, BH1750, etc
+      pubname = "/";
+      pubname += Settings.Name;
+      pubname += "/";
+      pubname += Settings.TaskDeviceName[TaskIndex];
+      pubname += "/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[0];
+      pubname += "/state";
+      value = String(UserVar[varIndex]);
+      Serial.println(pubname);
+      Serial.println(value);
+      MQTTclient.publish(pubname, value);
+      break;
+    case 2:
+    case 3:
+      pubname = "/";
+      pubname += Settings.Name;
+      pubname += "/";
+      pubname += Settings.TaskDeviceName[TaskIndex];
+      pubname += "/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[0];
+      pubname += "/state";
+      value = String(UserVar[varIndex]);
+      MQTTclient.publish(pubname, value);
+      pubname = "/";
+      pubname += "/";
+      pubname += Settings.TaskDeviceName[TaskIndex];
+      pubname += "/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[1];
+      pubname += "/state";
+      value = String(UserVar[varIndex + 1]);
+      MQTTclient.publish(pubname, value);
+      break;
+    case 10:                      // switch
+      //      if (UserVar[varIndex - 1] == 0)
+      //      else
+      break;
+  }
+}
+
+
+/*********************************************************************************************\
+ * Send data to Domoticz using MQTT message
+\*********************************************************************************************/
+boolean PiDome_sendDataMQTT(byte TaskIndex, byte sensorType, int idx, byte varIndex)
+{
+  // MQTT publish structure:
+  // /hooks/devices/idx/groupid/value name
+  // value name is prefixed in the device section for each type of device
+
+  char str[80];
+
+  String pubname = "";
+  String value = "";
+
+  switch (sensorType)
+  {
+    case 1:                      // single value sensor, used for Dallas, BH1750, etc
+      pubname = "/hooks/devices/";
+      pubname += idx;
+      pubname += "/SensorData/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[0];
+      value = String(UserVar[varIndex]);
+      Serial.println(pubname);
+      Serial.println(value);
+      MQTTclient.publish(pubname, value);
+      break;
+    case 2:
+    case 3:
+      pubname = "/hooks/devices/";
+      pubname += idx;
+      pubname += "/SensorData/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[0];
+      value = String(UserVar[varIndex]);
+      MQTTclient.publish(pubname, value);
+      pubname = "/hooks/devices/";
+      pubname += idx;
+      pubname += "/SensorData/";
+      pubname += Device[Settings.TaskDeviceNumber[TaskIndex]].ValueNames[1];
+      value = String(UserVar[varIndex + 1]);
+      MQTTclient.publish(pubname, value);
+      break;
+    case 10:                      // switch
+      //      if (UserVar[varIndex] == 0)
+      //      else
+      break;
+  }
+}
+
 
 struct NodeStruct
 {
@@ -488,7 +656,7 @@ boolean ThingsSpeak_sendData(byte sensorType, int idx, byte varIndex)
   sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
 
   sprintf_P(log, PSTR("%s%s"), "HTTP : connecting to ", host);
-  addLog(LOG_LEVEL_DEBUG,log);
+  addLog(LOG_LEVEL_DEBUG, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -499,7 +667,7 @@ boolean ThingsSpeak_sendData(byte sensorType, int idx, byte varIndex)
   if (!client.connect(host, Settings.ControllerPort))
   {
     connectionFailures++;
-    addLog(LOG_LEVEL_ERROR,(char*)"HTTP : connection failed");
+    addLog(LOG_LEVEL_ERROR, (char*)"HTTP : connection failed");
     if (printToWeb)
       printWebString += F("connection failed<BR>");
     return false;
@@ -512,37 +680,37 @@ boolean ThingsSpeak_sendData(byte sensorType, int idx, byte varIndex)
   switch (sensorType)
   {
     case 1:                      // single value sensor, used for Dallas, BH1750, etc
-      postDataStr +="&field";
+      postDataStr += "&field";
       postDataStr += idx;
       postDataStr += "=";
-      postDataStr += String(UserVar[varIndex - 1]);
+      postDataStr += String(UserVar[varIndex]);
       break;
     case 2:                      // dual value
     case 3:
-      postDataStr +="&field";
+      postDataStr += "&field";
       postDataStr += idx;
       postDataStr += "=";
-      postDataStr += String(UserVar[varIndex - 1]);
-      postDataStr +="&field";
-      postDataStr += idx+1;
-      postDataStr += "=";
       postDataStr += String(UserVar[varIndex]);
+      postDataStr += "&field";
+      postDataStr += idx + 1;
+      postDataStr += "=";
+      postDataStr += String(UserVar[varIndex + 1]);
       break;
     case 10:                      // switch
       break;
   }
   postDataStr += "\r\n\r\n";
 
-  String postStr = F("POST /update HTTP/1.1\n"); 
-  postStr += F("Host: api.thingspeak.com\n"); 
-  postStr += F("Connection: close\n"); 
+  String postStr = F("POST /update HTTP/1.1\n");
+  postStr += F("Host: api.thingspeak.com\n");
+  postStr += F("Connection: close\n");
   postStr += F("X-THINGSPEAKAPIKEY: ");
   postStr += Settings.ControllerPassword;
   postStr += "\n";
-  postStr += F("Content-Type: application/x-www-form-urlencoded\n"); 
-  postStr += F("Content-Length: "); 
-  postStr += postDataStr.length(); 
-  postStr += F("\n\n"); 
+  postStr += F("Content-Type: application/x-www-form-urlencoded\n");
+  postStr += F("Content-Length: ");
+  postStr += postDataStr.length();
+  postStr += F("\n\n");
   postStr += postDataStr;
 
   if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
@@ -558,28 +726,28 @@ boolean ThingsSpeak_sendData(byte sensorType, int idx, byte varIndex)
   // Read all the lines of the reply from server and print them to Serial
   while (client.available()) {
     if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-      {
-        sprintf_P(log,PSTR("C1 WS %u FM %u"),WiFi.status(),FreeMem());
-        Serial.println(log);
-      }
+    {
+      sprintf_P(log, PSTR("C1 WS %u FM %u"), WiFi.status(), FreeMem());
+      Serial.println(log);
+    }
     String line = client.readStringUntil('\n');
     if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-      {
-        sprintf_P(log,PSTR("C2 WS %u FM %u"),WiFi.status(),FreeMem());
-        Serial.println(log);
-      }
-    line.toCharArray(log,79);
-    addLog(LOG_LEVEL_DEBUG_MORE,log);
+    {
+      sprintf_P(log, PSTR("C2 WS %u FM %u"), WiFi.status(), FreeMem());
+      Serial.println(log);
+    }
+    line.toCharArray(log, 80);
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
     if (line.substring(0, 15) == "HTTP/1.1 200 OK")
     {
-      addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : Succes!");
+      addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : Succes!");
       if (printToWeb)
         printWebString += F("Success<BR>");
       success = true;
     }
     delay(1);
   }
-  addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : closing connection");
+  addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : closing connection");
   if (printToWeb)
     printWebString += F("closing connection<BR>");
 
@@ -602,7 +770,7 @@ boolean nodeVariableCopy(byte var, byte unit)
   if (Nodes[unit].ip[0] == 0)
   {
     strcpy(log, "Remote Node unknown");
-    addLog(LOG_LEVEL_DEBUG,log);
+    addLog(LOG_LEVEL_DEBUG, log);
     if (printToWeb)
     {
       printWebString += log;
@@ -614,7 +782,7 @@ boolean nodeVariableCopy(byte var, byte unit)
   sprintf_P(host, PSTR("%u.%u.%u.%u"), Nodes[unit].ip[0], Nodes[unit].ip[1], Nodes[unit].ip[2], Nodes[unit].ip[3]);
 
   sprintf_P(log, PSTR("%s%s"), "connecting to ", host);
-  addLog(LOG_LEVEL_DEBUG,log);
+  addLog(LOG_LEVEL_DEBUG, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -625,7 +793,7 @@ boolean nodeVariableCopy(byte var, byte unit)
   if (!client.connect(host, 80))
   {
     connectionFailures++;
-    addLog(LOG_LEVEL_ERROR,(char*)"HTTP : connection failed");
+    addLog(LOG_LEVEL_ERROR, (char*)"HTTP : connection failed");
     if (printToWeb)
       printWebString += F("connection failed<BR>");
     return false;
@@ -639,8 +807,8 @@ boolean nodeVariableCopy(byte var, byte unit)
   url += ",";
   url += value;
 
-  url.toCharArray(log, 79);
-  addLog(LOG_LEVEL_DEBUG,log);
+  url.toCharArray(log, 80);
+  addLog(LOG_LEVEL_DEBUG, log);
   if (printToWeb)
   {
     printWebString += log;
@@ -661,13 +829,13 @@ boolean nodeVariableCopy(byte var, byte unit)
     String line = client.readStringUntil('\n');
     if (line.substring(0, 15) == "HTTP/1.1 200 OK")
     {
-      addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : Succes!");
+      addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : Succes!");
       if (printToWeb)
         printWebString += F("Success<BR>");
       success = true;
     }
   }
-  addLog(LOG_LEVEL_DEBUG,(char*)"HTTP : closing connection");
+  addLog(LOG_LEVEL_DEBUG, (char*)"HTTP : closing connection");
   if (printToWeb)
     printWebString += F("closing connection<BR>");
 
@@ -695,7 +863,7 @@ void checkUDP()
     if (packetBuffer[0] != 255)
     {
       packetBuffer[len] = 0;
-      addLog(LOG_LEVEL_DEBUG,packetBuffer);
+      addLog(LOG_LEVEL_DEBUG, packetBuffer);
 #ifdef ESP_CONNEXIO
       ExecuteLine(packetBuffer, VALUE_SOURCE_SERIAL);
 #endif
@@ -730,8 +898,8 @@ void checkUDP()
             char ipaddress[16];
             sprintf_P(ipaddress, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
             char log[80];
-            sprintf_P(log, PSTR("UDP  : %s,%s,%u"), macaddress,ipaddress,unit);
-            addLog(LOG_LEVEL_DEBUG,log);
+            sprintf_P(log, PSTR("UDP  : %s,%s,%u"), macaddress, ipaddress, unit);
+            addLog(LOG_LEVEL_DEBUG_MORE, log);
           }
       }
     }
@@ -756,7 +924,7 @@ void sendSysInfoUDP(byte repeats)
 {
   if (Settings.UDPPort == 0)
     return;
-    
+
   // 1 byte 'binary token 255'
   // 1 byte id
   // 6 byte mac
@@ -765,7 +933,7 @@ void sendSysInfoUDP(byte repeats)
   // ??? build
   // ??
   // send my info to the world...
-  addLog(LOG_LEVEL_DEBUG,(char*)"UDP  : Send Sysinfo message");
+  addLog(LOG_LEVEL_DEBUG_MORE, (char*)"UDP  : Send Sysinfo message");
   for (byte counter = 0; counter < repeats; counter++)
   {
     uint8_t mac[] = {0, 0, 0, 0, 0, 0};
