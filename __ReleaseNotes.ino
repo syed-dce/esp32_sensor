@@ -1,3 +1,14 @@
+// R21 21-09-2015
+// Added more logging to MQTT
+// Added mcpgpio to valid list of control commands
+// Fixed hardcoded MQTT broker port
+
+// R20 13-09-2015
+// Changed factory reset, first wipe entire eeprom size to zeros
+// Added option to do a factory reset by connecting RX and TX pins during boot
+// Added a help button on the device page that leads to the device specific page on our Wiki
+// Preliminary support for deep_sleep
+
 // R019 13-09-2015
 // Added support for the HC-SR04 Ultrasonic distance sensor
 // Input switch can now be set to send switch state or dimvalue

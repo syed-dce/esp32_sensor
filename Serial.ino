@@ -20,6 +20,22 @@ void ExecuteCommand(char *Line)
   // commands to execute io tasks
   // ****************************************
 
+  if (strcasecmp(Command, "Sleep") == 0)
+  {
+    ESP.deepSleep(10000000, WAKE_RF_DEFAULT); // Sleep for 10 seconds
+  }
+
+  if (strcasecmp(Command, "RTCsave") == 0)
+  {
+    saveToRTC(Par1);
+  }
+
+  if (strcasecmp(Command, "RTCread") == 0)
+  {
+    byte data=0;
+    readFromRTC(&data);
+  }
+
   if (strcasecmp(Command, "GPIO") == 0)
   {
     if (Par1 >= 0 && Par1 <= 16)
@@ -52,6 +68,11 @@ void ExecuteCommand(char *Line)
         printWebString += "<BR>";
       }
     }
+  }
+
+  if (strcasecmp(Command, "MCPGPIO") == 0)
+  {
+    mcp23017(Par1, Par2);
   }
 
   if (strcasecmp(Command, "ExtRead") == 0)
@@ -99,11 +120,6 @@ void ExecuteCommand(char *Line)
     }
     else
       Serial.println("Error getting data");
-  }
-
-  if (strcasecmp(Command, "ExtWiredOut") == 0)
-  {
-    mcp23017(Par1, Par2);
   }
 
   if (strcasecmp(Command, "LCDWrite") == 0)
