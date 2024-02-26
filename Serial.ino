@@ -20,94 +20,28 @@ void ExecuteCommand(char *Line)
   // commands for debugging
   // ****************************************
 
+  if (strcasecmp_P(Command, PSTR("Pullup")) == 0)
+  {
+    Plugin_009_Config(18, 1);
+  }
+
+  #if FEATURE_SPIFFS
   if (strcasecmp_P(Command, PSTR("format")) == 0)
   {
     Serial.println(F("formatting..."));
     SPIFFS.format();
     Serial.println(F("format done!"));
   }
-  
+  #endif
+    
   if (strcasecmp_P(Command, PSTR("NoSleep")) == 0)
   {
     Settings.deepSleep = 0;
   }
 
   // ****************************************
-  // commands to execute io tasks
+  // special commands for old nodo plugin
   // ****************************************
-
-  if (strcasecmp_P(Command, PSTR("GPIO")) == 0)
-  {
-    if (Par1 >= 0 && Par1 <= 16)
-    {
-      pinMode(Par1, OUTPUT);
-      digitalWrite(Par1, Par2);
-      if (printToWeb)
-      {
-        printWebString += F("GPIO ");
-        printWebString += Par1;
-        printWebString += F(" Set to ");
-        printWebString += Par2;
-        printWebString += F("<BR>");
-      }
-    }
-  }
-
-  if (strcasecmp_P(Command, PSTR("PWM")) == 0)
-  {
-    if (Par1 >= 0 && Par1 <= 1023)
-    {
-      pinMode(Par1, OUTPUT);
-      analogWrite(Par1, Par2);
-      if (printToWeb)
-      {
-        printWebString += F("GPIO ");
-        printWebString += Par1;
-        printWebString += F(" Set PWM to ");
-        printWebString += Par2;
-        printWebString += F("<BR>");
-      }
-    }
-  }
-
-  if (strcasecmp_P(Command, PSTR("MCPGPIO")) == 0)
-  {
-    mcp23017(Par1, Par2);
-    if (printToWeb)
-      {
-        printWebString += F("MCPGPIO ");
-        printWebString += Par1;
-        printWebString += F(" Set to ");
-        printWebString += Par2;
-        printWebString += F("<BR>");
-      }
-  }
-
-  if (strcasecmp_P(Command, PSTR("ExtRead")) == 0)
-  {
-    uint8_t address = 0x7f;
-    Wire.requestFrom(address, (uint8_t)Par1);
-    if (Wire.available())
-    {
-      for (byte x = 0; x < Par1; x++)
-        Serial.println(Wire.read());
-    }
-  }
-
-  if (strcasecmp_P(Command, PSTR("ExtGPIO")) == 0)
-    extender(1, Par1, Par2);
-  if (strcasecmp_P(Command, PSTR("ExtPWM")) == 0)
-    extender(3, Par1, Par2);
-  if (strcasecmp_P(Command, PSTR("ExtGPIORead")) == 0)
-  {
-    byte value = extender(2, Par1, 0);
-    Serial.println(value);
-  }
-  if (strcasecmp_P(Command, PSTR("ExtADCRead")) == 0)
-  {
-    int value = extender(4, Par1, 0);
-    Serial.println(value);
-  }
 
   if (strcasecmp_P(Command, PSTR("DomoticzSend")) == 0)
   {

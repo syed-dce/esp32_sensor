@@ -71,8 +71,9 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              22
+#define BUILD                              27
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
+#define FEATURE_SPIFFS                  false
 
 #define PROTOCOL_DOMOTICZ_HTTP              1
 #define PROTOCOL_DOMOTICZ_MQTT              2
@@ -109,7 +110,7 @@
 
 #define PLUGIN_INIT_ALL                     1
 #define PLUGIN_INIT                         2
-#define PLUGIN_COMMAND                      3
+#define PLUGIN_READ                         3
 #define PLUGIN_ONCE_A_SECOND                4
 #define PLUGIN_TEN_PER_SECOND               5
 #define PLUGIN_DEVICE_ADD                   6
@@ -119,6 +120,8 @@
 #define PLUGIN_WEBFORM_VALUES              10
 #define PLUGIN_GET_DEVICENAME              11
 #define PLUGIN_GET_DEVICEVALUENAMES        12
+#define PLUGIN_WRITE                       13
+#define PLUGIN_EVENT_OUT                   14
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -127,7 +130,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
-#include <FS.h>
+#if FEATURE_SPIFFS
+  #include <FS.h>
+#endif
 
 // MQTT client
 PubSubClient MQTTclient("");
@@ -160,7 +165,7 @@ struct SettingsStruct
   byte          Controller_IP[4];
   unsigned int  ControllerPort;
   byte          IP_Octet;
-  char          WifiAPKey[64];
+  char          _obsolete[64];
   unsigned long Delay;
   int8_t        Pin_i2c_sda;
   int8_t        Pin_i2c_scl;
@@ -187,6 +192,7 @@ struct SettingsStruct
   byte          deepSleep;
   char          MQTTpublish[81];
   char          MQTTsubscribe[81];
+  boolean       CustomCSS;
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -204,6 +210,10 @@ struct EventStruct
   byte BaseVarIndex;
   byte idx;
   byte sensorType;
+  int Par1;
+  int Par2;
+  int Par3;
+  byte OriginTaskIndex;
 };
 
 struct LogStruct
@@ -257,7 +267,10 @@ String dummyString = "";
 void setup()
 {
   Serial.begin(115200);
-  fileSystemCheck();
+
+  #if FEATURE_SPIFFS
+    fileSystemCheck();
+  #endif
 
   emergencyReset();
 
@@ -332,6 +345,7 @@ void setup()
   timer100ms = millis() + 100; // timer for periodic actions 10 x per/sec
   timer1s = millis() + 1000; // timer for periodic actions once per/sec
   timerwd = millis() + 30000; // timer for watchdog once per 30 sec
+
 }
 
 
@@ -376,6 +390,7 @@ void loop()
     syslog(str);
     sendSysInfoUDP(1);
     refreshNodeList();
+    MQTTCheck();
   }
 
   // Perform regular checks, 10 times/sec
@@ -444,7 +459,7 @@ void SensorSend()
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
         preValue[varNr] = UserVar[varIndex + varNr];
         
-      success = PluginCall(PLUGIN_COMMAND, &TempEvent, dummyString);
+      success = PluginCall(PLUGIN_READ, &TempEvent, dummyString);
 
       if (success)
       {

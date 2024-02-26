@@ -76,6 +76,9 @@ boolean sendData(struct EventStruct *event)
       PiDome_sendDataMQTT(event);
       break;
   }
+
+  PluginCall(PLUGIN_EVENT_OUT, event, dummyString);
+  
   if (Settings.MessageDelay != 0)
   {
     char log[30];
@@ -85,6 +88,7 @@ boolean sendData(struct EventStruct *event)
     while (millis() < timer)
       backgroundtasks();
   }
+
 }
 //#endif
 
@@ -289,23 +293,6 @@ boolean NodoTelnet_sendData(struct EventStruct *event)
   return success;
 }
 
-/*********************************************************************************************\
- * Syslog client
-\*********************************************************************************************/
-void syslog(char *message)
-{
-  if (Settings.Syslog_IP[0] != 0)
-  {
-    IPAddress broadcastIP(Settings.Syslog_IP[0], Settings.Syslog_IP[1], Settings.Syslog_IP[2], Settings.Syslog_IP[3]);
-    portTX.beginPacket(broadcastIP, 514);
-    char str[80];
-    str[0] = 0;
-    sprintf_P(str, PSTR("<7>ESP Unit: %u : %s"), Settings.Unit, message);
-    portTX.write(str);
-    portTX.endPacket();
-  }
-}
-
 
 /*********************************************************************************************\
  * Handle incoming MQTT messages
@@ -348,6 +335,21 @@ void MQTTConnect()
       Serial.println(F("MQTT : Failed to connected to broker"));
 
     delay(500);
+  }
+}
+
+
+/*********************************************************************************************\
+ * Check connection MQTT message broker
+\*********************************************************************************************/
+void MQTTCheck()
+{
+  if ((Settings.Protocol == PROTOCOL_DOMOTICZ_MQTT) || (Settings.Protocol == PROTOCOL_OPENHAB_MQTT) || (Settings.Protocol == PROTOCOL_PIDOME_MQTT))
+  if (!MQTTclient.connected())
+  {
+    MQTTclient.disconnect();
+    delay(1000);
+    MQTTConnect();
   }
 }
 
@@ -425,43 +427,26 @@ void MQTTMessage(String *topic, String *message)
       {
         String cmd = topicSplit[1];
         int pin = topicSplit[2].toInt();
-        if (cmd == "gpio")
-        {
-          int value = message->toFloat();
-          char cmd[80];
-          sprintf_P(cmd, PSTR("gpio,%u,%u"), pin, value);
-          Serial.println(cmd);
-#ifdef ESP_CONNEXIO
-          ExecuteLine(cmd, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
-          ExecuteCommand(cmd);
-#endif
-        }
+        int value = message->toFloat();
+        struct EventStruct TempEvent;
+        TempEvent.Par1 = pin;
+        TempEvent.Par2 = value;
+        PluginCall(PLUGIN_WRITE, &TempEvent, cmd);
         break;
       }
-
 
     case PROTOCOL_PIDOME_MQTT:
       {
         String name = topicSplit[4];
         String cmd = topicSplit[5];
         int pin = topicSplit[6].toInt();
+        int value = (*message == "true");
+        struct EventStruct TempEvent;
+        TempEvent.Par1 = pin;
+        TempEvent.Par2 = value;
         if (name == Settings.Name)
         {
-          if (cmd == "gpio")
-          {
-            int value = (*message == "true");
-            char cmd[80];
-            sprintf_P(cmd, PSTR("gpio,%u,%u"), pin, value);
-            Serial.println(cmd);
-#ifdef ESP_CONNEXIO
-            ExecuteLine(cmd, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
-            ExecuteCommand(cmd);
-#endif
-          }
+          PluginCall(PLUGIN_WRITE, &TempEvent, cmd);
         }
         break;
       }
@@ -641,13 +626,6 @@ boolean PiDome_sendDataMQTT(struct EventStruct *event)
 }
 
 
-struct NodeStruct
-{
-  byte ip[4];
-  byte age;
-} Nodes[32];
-
-
 /*********************************************************************************************\
  * Send data to Domoticz using http url querystring
 \*********************************************************************************************/
@@ -763,6 +741,12 @@ boolean ThingsSpeak_sendData(struct EventStruct *event)
 }
 
 
+struct NodeStruct
+{
+  byte ip[4];
+  byte age;
+} Nodes[32];
+
 /*********************************************************************************************\
  * Send data to other ESP node
 \*********************************************************************************************/
@@ -849,6 +833,24 @@ boolean nodeVariableCopy(byte var, byte unit)
     printWebString += F("closing connection<BR>");
 
   return success;
+}
+
+
+/*********************************************************************************************\
+ * Syslog client
+\*********************************************************************************************/
+void syslog(char *message)
+{
+  if (Settings.Syslog_IP[0] != 0)
+  {
+    IPAddress broadcastIP(Settings.Syslog_IP[0], Settings.Syslog_IP[1], Settings.Syslog_IP[2], Settings.Syslog_IP[3]);
+    portTX.beginPacket(broadcastIP, 514);
+    char str[80];
+    str[0] = 0;
+    sprintf_P(str, PSTR("<7>ESP Unit: %u : %s"), Settings.Unit, message);
+    portTX.write(str);
+    portTX.endPacket();
+  }
 }
 
 
