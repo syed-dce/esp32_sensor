@@ -1,3 +1,31 @@
+// R35 11-10-2015
+// Finally finished the LCD plugin with some basic functionality
+// Preliminary controller support for EmonCMS
+
+// R34 10-10-2015
+// Changed controller password length from 25 to 63 chars.
+// If you have set a system password, it will be cleared with this update
+
+// R33 10-10-2015
+// Limit flash reset cycle to 3 attempts after cold boot. It will then enter rescue mode.
+
+// R32 09-10-2015
+// Fixed a bug in negative values on Dallas DS18b20 and added CRC check
+
+// R31 08-10-2015
+// Added more information on dallas plugin and set value to NaN on read errors.
+// Changed all serial.print() commands to addlog() where they could conflict with future serial plugins
+
+// R30 06-10-2015
+// Moved all controller specific code to CPlugin mechanism (similar to device plugins)
+// Added debounce feature to pulsecounter plugin
+
+// R29 03-10-2015
+// Fixed bug with idx values > 255. Bug was introduced in R22
+
+// R28 03-10-2015
+// Merged Pro Mini extender plugins into one single plugin
+
 // R27 02-10-2015
 // Changed MCP23017 plugin to scan inputs realtime instead of using the system timer mechanism
 // Changed MCP23017 default pullup resistors on input pins

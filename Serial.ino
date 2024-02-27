@@ -1,7 +1,6 @@
 /********************************************************************************************\
 * Process data from Serial Interface
 \*********************************************************************************************/
-
 #define INPUT_COMMAND_SIZE          80
 void ExecuteCommand(char *Line)
 {
@@ -20,9 +19,15 @@ void ExecuteCommand(char *Line)
   // commands for debugging
   // ****************************************
 
-  if (strcasecmp_P(Command, PSTR("Pullup")) == 0)
+  if (strcasecmp_P(Command, PSTR("gpio")) == 0)
   {
-    Plugin_009_Config(18, 1);
+    pinMode(Par1, OUTPUT);
+    digitalWrite(Par1, Par2);
+  }
+  
+  if (strcasecmp_P(Command, PSTR("sensor")) == 0)
+  {
+    SensorSend();
   }
 
   #if FEATURE_SPIFFS
@@ -55,18 +60,6 @@ void ExecuteCommand(char *Line)
       UserVar[(VARS_PER_TASK * TASKS_MAX) - 1] = atof(TmpStr1);
       sendData(&TempEvent);
     }
-  }
-
-  if (strcasecmp_P(Command, PSTR("DomoticzGet")) == 0)
-  {
-    float value = 0;
-    if (Domoticz_getData(Par2, &value))
-    {
-      Serial.print(F("DomoticzGet "));
-      Serial.println(value);
-    }
-    else
-      Serial.println(F("Error getting data"));
   }
 
   if (strcasecmp_P(Command, PSTR("LCDWrite")) == 0)
@@ -109,6 +102,12 @@ void ExecuteCommand(char *Line)
   if (strcasecmp_P(Command, PSTR("Restart")) == 0)
     ESP.restart();
 
+  if (strcasecmp_P(Command, PSTR("erase")) == 0)
+  {
+    EraseFlash();
+    saveToRTC(0);
+  }
+  
   if (strcasecmp_P(Command, PSTR("Reset")) == 0)
     ResetFactory();
 

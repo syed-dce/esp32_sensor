@@ -90,6 +90,18 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         success = true;
         break;
       }
+
+    case PLUGIN_WEBFORM_SHOW_CONFIG:
+      {
+        for (byte x=0; x < 8; x++)
+          {
+            if (x !=0)
+              string += "-";
+            string += String(ExtraTaskSettings.TaskDevicePluginConfig[x],HEX);
+          }
+        success = true;
+        break;
+      }
       
     case PLUGIN_READ:
       {
@@ -101,11 +113,27 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
 
         Plugin_004_DallasPin = Settings.TaskDevicePin1[event->TaskIndex];
         float value = 0;
-        Plugin_004_DS_readTemp(addr, &value);
-        UserVar[event->BaseVarIndex] = value;
-        Serial.print(F("DS   : Temperature: "));
-        Serial.println(UserVar[event->BaseVarIndex]);
-        success = true;
+        String log = F("DS   : Temperature: ");
+        if (Plugin_004_DS_readTemp(addr, &value))
+          {
+            UserVar[event->BaseVarIndex] = value;
+            log += UserVar[event->BaseVarIndex];
+            success = true;
+          }
+          else
+          {
+            UserVar[event->BaseVarIndex] = NAN;
+            log += F("Error!");
+          }
+        log += (" (");
+        for (byte x=0; x < 8; x++)
+          {
+            if (x !=0)
+              log += "-";
+            log += String(ExtraTaskSettings.TaskDevicePluginConfig[x],HEX);
+          }
+        log += ')';
+        addLog(LOG_LEVEL_INFO,log);
         break;
       }
 
@@ -140,9 +168,9 @@ byte Plugin_004_DS_scan(byte getDeviceROM, uint8_t* ROM)
 \*********************************************************************************************/
 boolean Plugin_004_DS_readTemp(uint8_t ROM[8], float *value)
 {
-  int DSTemp;
+  int16_t DSTemp;
   byte ScratchPad[12];
-
+  
   Plugin_004_DS_reset();
   Plugin_004_DS_write(0x55);           // Choose ROM
   for (byte i = 0; i < 8; i++)
@@ -159,6 +187,12 @@ boolean Plugin_004_DS_readTemp(uint8_t ROM[8], float *value)
 
   for (byte i = 0; i < 9; i++)            // copy 8 bytes
     ScratchPad[i] = Plugin_004_DS_read();
+
+  if (Plugin_004_DS_crc8(ScratchPad, 8) != ScratchPad[8])
+    {
+      *value=0;
+      return false;
+    }
 
   DSTemp = (ScratchPad[1] << 8) + ScratchPad[0];
   *value = (float(DSTemp) * 0.0625);
@@ -405,3 +439,18 @@ void Plugin_004_DS_write_bit(uint8_t v)
   }
 }
 
+uint8_t Plugin_004_DS_crc8( uint8_t *addr, uint8_t len)
+{
+  uint8_t crc = 0;
+  
+  while (len--) {
+    uint8_t inbyte = *addr++;
+    for (uint8_t i = 8; i; i--) {
+      uint8_t mix = (crc ^ inbyte) & 0x01;
+      crc >>= 1;
+      if (mix) crc ^= 0x8C;
+      inbyte >>= 1;
+    }
+  }
+  return crc;
+}

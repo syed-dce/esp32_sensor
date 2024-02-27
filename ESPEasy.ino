@@ -57,12 +57,12 @@
 #define DEFAULT_DELAY       60                  // Enter your Send delay in seconds
 #define DEFAULT_AP_KEY      "configesp"         // Enter network WPA key for AP (config) mode
 #define DEFAULT_PROTOCOL    1                   // Protocol used for controller communications
-                                                //   1 = Domoticz HTTP
-                                                //   2 = Domoticz MQTT
-                                                //   3 = Nodo Telnet
-                                                //   4 = ThingSpeak
-                                                //   5 = OpenHAB MQTT
-                                                //   6 = PiDome MQTT
+//   1 = Domoticz HTTP
+//   2 = Domoticz MQTT
+//   3 = Nodo Telnet
+//   4 = ThingSpeak
+//   5 = OpenHAB MQTT
+//   6 = PiDome MQTT
 #define UNIT                0
 
 // ********************************************************************************
@@ -71,16 +71,14 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              27
+#define BUILD                              35
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
-#define PROTOCOL_DOMOTICZ_HTTP              1
-#define PROTOCOL_DOMOTICZ_MQTT              2
-#define PROTOCOL_NODO_TELNET                3
-#define PROTOCOL_THINGSPEAK                 4
-#define PROTOCOL_OPENHAB_MQTT               5
-#define PROTOCOL_PIDOME_MQTT                6
+#define CPLUGIN_PROTOCOL_ADD                1
+#define CPLUGIN_PROTOCOL_TEMPLATE           2
+#define CPLUGIN_PROTOCOL_SEND               3
+#define CPLUGIN_PROTOCOL_RECV               4
 
 #define LOG_LEVEL_ERROR                     1
 #define LOG_LEVEL_INFO                      2
@@ -96,6 +94,7 @@
 #define PLUGIN_MAX                         64
 #define PLUGIN_CONFIGVAR_MAX                8
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
+#define CPLUGIN_MAX                        16
 
 #define DEVICE_TYPE_SINGLE                  1  // connected through 1 datapin
 #define DEVICE_TYPE_I2C                     2  // connected through I2C
@@ -117,11 +116,12 @@
 #define PLUGIN_EVENTLIST_ADD                7
 #define PLUGIN_WEBFORM_SAVE                 8
 #define PLUGIN_WEBFORM_LOAD                 9
-#define PLUGIN_WEBFORM_VALUES              10
+#define PLUGIN_WEBFORM_SHOW_VALUES         10
 #define PLUGIN_GET_DEVICENAME              11
 #define PLUGIN_GET_DEVICEVALUENAMES        12
 #define PLUGIN_WRITE                       13
 #define PLUGIN_EVENT_OUT                   14
+#define PLUGIN_WEBFORM_SHOW_CONFIG         15
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -131,7 +131,7 @@
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
 #if FEATURE_SPIFFS
-  #include <FS.h>
+#include <FS.h>
 #endif
 
 // MQTT client
@@ -153,7 +153,7 @@ struct SecurityStruct
   char          WifiKey[64];
   char          WifiAPKey[64];
   char          ControllerUser[26];
-  char          ControllerPassword[26];
+  char          ControllerPassword[64];
   char          Password[26];
 } SecuritySettings;
 
@@ -208,12 +208,14 @@ struct EventStruct
 {
   byte TaskIndex;
   byte BaseVarIndex;
-  byte idx;
+  int idx;
   byte sensorType;
   int Par1;
   int Par2;
   int Par3;
   byte OriginTaskIndex;
+  String String1;
+  String String2;
 };
 
 struct LogStruct
@@ -235,7 +237,17 @@ struct DeviceStruct
   byte ValueCount;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
+struct ProtocolStruct
+{
+  byte Number;
+  boolean usesMQTT;
+  boolean usesAccount;
+  boolean usesPassword;
+  char Name[20];
+} Protocol[CPLUGIN_MAX];
+
 int deviceCount = -1;
+int protocolCount = -1;
 
 boolean printToWeb = false;
 String printWebString = "";
@@ -259,7 +271,12 @@ int WebLoggedInTimer = 300;
 boolean (*Plugin_ptr[PLUGIN_MAX])(byte, struct EventStruct*, String&);
 byte Plugin_id[PLUGIN_MAX];
 
+boolean (*CPlugin_ptr[PLUGIN_MAX])(byte, struct EventStruct*);
+byte CPlugin_id[PLUGIN_MAX];
+
 String dummyString = "";
+
+boolean systemOK = false;
 
 /*********************************************************************************************\
  * SETUP
@@ -268,84 +285,106 @@ void setup()
 {
   Serial.begin(115200);
 
-  #if FEATURE_SPIFFS
-    fileSystemCheck();
-  #endif
+#if FEATURE_SPIFFS
+  fileSystemCheck();
+#endif
 
   emergencyReset();
 
   LoadSettings();
   ExtraTaskSettings.TaskIndex = 255; // make sure this is an unused nr to prevent cache load on boot
-  
+
   // if different version, eeprom settings structure has changed. Full Reset needed
   // on a fresh ESP module eeprom values are set to 255. Version results into -1 (signed int)
-  if (Settings.Version != VERSION || Settings.PID != ESP_PROJECT_PID)
+  if (Settings.Version == VERSION && Settings.PID == ESP_PROJECT_PID)
   {
+    systemOK = true;
+  }
+  else
+  {
+    // Direct Serial is allowed here, since this is only an emergency task.
+    Serial.print("\nPID:");
     Serial.println(Settings.PID);
+    Serial.print("Version:");
     Serial.println(Settings.Version);
     Serial.println(F("INIT : Incorrect PID or version!"));
-    delay(10000);
+    delay(1000);
     ResetFactory();
   }
 
-  Serial.begin(Settings.BaudRate);
-  Serial.print(F("\nINIT : Booting Build nr:"));
-  Serial.println(BUILD);
-
-  if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-    Serial.setDebugOutput(true);
-
-  WifiAPconfig();
-  WifiConnect();
-
-  hardwareInit();
-  PluginInit();
-
-  WebServerInit();
-
-  // setup UDP
-  if (Settings.UDPPort != 0)
-    portRX.begin(Settings.UDPPort);
-
-  // Setup LCD display
-  lcd.init();                      // initialize the lcd
-  lcd.backlight();
-  lcd.print("ESP ");
-
-  // Setup MQTT Client
-  if ((Settings.Protocol == PROTOCOL_DOMOTICZ_MQTT) || (Settings.Protocol == PROTOCOL_OPENHAB_MQTT) || (Settings.Protocol == PROTOCOL_PIDOME_MQTT))
-    MQTTConnect();
-
-  sendSysInfoUDP(3);
-  Serial.println(F("INIT : Boot OK"));
-  addLog(LOG_LEVEL_INFO, (char*)"Boot");
-
-  if (Settings.deepSleep)
-    Serial.println(F("INIT : Deep sleep enabled"));
-
-  byte bootMode = 0;
-  if (readFromRTC(&bootMode))
+  if (systemOK)
   {
-    if (bootMode == 1)
-      Serial.println(F("INIT : Reboot from deepsleep"));
+    Serial.begin(Settings.BaudRate);
+    String log = F("\nINIT : Booting Build nr:");
+    log += BUILD;
+    addLog(LOG_LEVEL_INFO, log);
+
+    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
+      Serial.setDebugOutput(true);
+
+    WifiAPconfig();
+    WifiConnect();
+
+    hardwareInit();
+    PluginInit();
+    CPluginInit();
+
+    WebServerInit();
+
+    // setup UDP
+    if (Settings.UDPPort != 0)
+      portRX.begin(Settings.UDPPort);
+
+    // Setup LCD display
+    lcd.init();                      // initialize the lcd
+    lcd.backlight();
+    lcd.print("ESP ");
+
+    // Setup MQTT Client
+    byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+    if (Protocol[ProtocolIndex].usesMQTT)
+      MQTTConnect();
+
+    sendSysInfoUDP(3);
+
+    log = F("INIT : Boot OK");
+    addLog(LOG_LEVEL_INFO, log);
+
+    if (Settings.deepSleep)
+    {
+      log = F("INIT : Deep sleep enabled");
+      addLog(LOG_LEVEL_INFO, log);
+    }
+
+    byte bootMode = 0;
+    if (readFromRTC(&bootMode))
+    {
+      if (bootMode == 1)
+        log = F("INIT : Reboot from deepsleep");
+      else
+        log = F("INIT : Normal boot");
+    }
     else
-      Serial.println(F("INIT : Normal boot"));
+      log = F("INIT : RTC not read");
+
+    addLog(LOG_LEVEL_INFO, log);
+
+    saveToRTC(0);
+
+    // Setup timers
+    if (bootMode == 0)
+      timer = millis() + 30000; // startup delay 30 sec
+    else
+      timer = millis() + 0; // no startup from deepsleep wake up
+
+    timer100ms = millis() + 100; // timer for periodic actions 10 x per/sec
+    timer1s = millis() + 1000; // timer for periodic actions once per/sec
+    timerwd = millis() + 30000; // timer for watchdog once per 30 sec
   }
   else
-    Serial.println(F("INIT : RTC not read"));
-
-  saveToRTC(0);
-
-  // Setup timers
-  if (bootMode == 0)
-    timer = millis() + 30000; // startup delay 30 sec
-  else
-    timer = millis() + 0; // no startup from deepsleep wake up
-
-  timer100ms = millis() + 100; // timer for periodic actions 10 x per/sec
-  timer1s = millis() + 1000; // timer for periodic actions once per/sec
-  timerwd = millis() + 30000; // timer for watchdog once per 30 sec
-
+  {
+    Serial.println(F("Entered Rescue mode!"));
+  }
 }
 
 
@@ -357,84 +396,89 @@ void loop()
   if (Serial.available())
     serial();
 
-  checkUDP();
-
-  if (cmd_within_mainloop != 0)
+  if (systemOK)
   {
-    switch (cmd_within_mainloop)
+    checkUDP();
+
+    if (cmd_within_mainloop != 0)
     {
-      case CMD_WIFI_DISCONNECT:
-        {
-          WifiDisconnect();
-          break;
-        }
-      case CMD_REBOOT:
-        {
-          ESP.reset();
-          break;
-        }
+      switch (cmd_within_mainloop)
+      {
+        case CMD_WIFI_DISCONNECT:
+          {
+            WifiDisconnect();
+            break;
+          }
+        case CMD_REBOOT:
+          {
+            ESP.reset();
+            break;
+          }
+      }
+      cmd_within_mainloop = 0;
     }
-    cmd_within_mainloop = 0;
-  }
 
-  // Watchdog trigger
-  if (millis() > timerwd)
-  {
-    wdcounter++;
-    timerwd = millis() + 30000;
-    char str[40];
-    str[0] = 0;
-    Serial.print("WD   : ");
-    sprintf_P(str, PSTR("Uptime %u ConnectFailures %u FreeMem %u"), wdcounter / 2, connectionFailures, FreeMem());
-    Serial.println(str);
-    syslog(str);
-    sendSysInfoUDP(1);
-    refreshNodeList();
-    MQTTCheck();
-  }
-
-  // Perform regular checks, 10 times/sec
-  if (millis() > timer100ms)
-  {
-    timer100ms = millis() + 100;
-    PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
-  }
-
-  // Perform regular checks, 1 time/sec
-  if (millis() > timer1s)
-  {
-    PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
-
-    timer1s = millis() + 1000;
-    WifiCheck();
-
-    if (SecuritySettings.Password[0] != 0)
+    // Watchdog trigger
+    if (millis() > timerwd)
     {
-      if (WebLoggedIn)
-        WebLoggedInTimer++;
-      if (WebLoggedInTimer > 300)
-        WebLoggedIn = false;
+      wdcounter++;
+      timerwd = millis() + 30000;
+      char str[60];
+      str[0] = 0;
+      sprintf_P(str, PSTR("Uptime %u ConnectFailures %u FreeMem %u"), wdcounter / 2, connectionFailures, FreeMem());
+      String log = F("WD   : ");
+      log += str;
+      addLog(LOG_LEVEL_INFO, log);
+      sendSysInfoUDP(1);
+      refreshNodeList();
+      MQTTCheck();
     }
-  }
 
-  // Check sensors and send data to controller when sensor timer has elapsed
-  if (millis() > timer)
-  {
-    timer = millis() + Settings.Delay * 1000;
-    SensorSend();
-    if (Settings.deepSleep)
+    // Perform regular checks, 10 times/sec
+    if (millis() > timer100ms)
     {
-      saveToRTC(1);
-      Serial.println(F("Enter deep sleep..."));
-      ESP.deepSleep(Settings.Delay * 1000000, WAKE_RF_DEFAULT); // Sleep for set delay
+      timer100ms = millis() + 100;
+      PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
     }
+
+    // Perform regular checks, 1 time/sec
+    if (millis() > timer1s)
+    {
+      PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
+
+      timer1s = millis() + 1000;
+      WifiCheck();
+
+      if (SecuritySettings.Password[0] != 0)
+      {
+        if (WebLoggedIn)
+          WebLoggedInTimer++;
+        if (WebLoggedInTimer > 300)
+          WebLoggedIn = false;
+      }
+    }
+
+    // Check sensors and send data to controller when sensor timer has elapsed
+    if (millis() > timer)
+    {
+      timer = millis() + Settings.Delay * 1000;
+      SensorSend();
+      if (Settings.deepSleep)
+      {
+        saveToRTC(1);
+        String log = F("Enter deep sleep...");
+        addLog(LOG_LEVEL_INFO, log);
+        ESP.deepSleep(Settings.Delay * 1000000, WAKE_RF_DEFAULT); // Sleep for set delay
+      }
+    }
+
+    if (connectionFailures > REBOOT_ON_MAX_CONNECTION_FAILURES)
+      delayedReboot(60);
+
+    backgroundtasks();
   }
-
-  if (connectionFailures > REBOOT_ON_MAX_CONNECTION_FAILURES)
-    delayedReboot(60);
-
-  backgroundtasks();
-
+  else
+    delay(1);
 }
 
 
@@ -454,11 +498,11 @@ void SensorSend()
       TempEvent.BaseVarIndex = varIndex;
       TempEvent.idx = Settings.TaskDeviceID[x];
       TempEvent.sensorType = Device[DeviceIndex].VType;
-      
+
       float preValue[VARS_PER_TASK]; // store values before change, in case we need it in the formula
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
         preValue[varNr] = UserVar[varIndex + varNr];
-        
+
       success = PluginCall(PLUGIN_READ, &TempEvent, dummyString);
 
       if (success)
@@ -467,7 +511,7 @@ void SensorSend()
         {
           if (ExtraTaskSettings.TaskDeviceFormula[varNr][0] != 0)
           {
-            String spreValue= String(preValue[varNr]);
+            String spreValue = String(preValue[varNr]);
             String formula = ExtraTaskSettings.TaskDeviceFormula[varNr];
             float value = UserVar[varIndex + varNr];
             float result = 0;

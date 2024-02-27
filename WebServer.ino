@@ -20,12 +20,12 @@ void WebServerInit()
   WebServer.on("/download", handle_download);
   WebServer.on("/upload", handle_upload);
   WebServer.onFileUpload(handleFileUpload);
-  #if FEATURE_SPIFFS
-    WebServer.on("/filelist", handle_filelist);
-    WebServer.onNotFound(handleNotFound);
-  #else
-    WebServer.on("/esp.css", handle_css);
-  #endif
+#if FEATURE_SPIFFS
+  WebServer.on("/filelist", handle_filelist);
+  WebServer.onNotFound(handleNotFound);
+#else
+  WebServer.on("/esp.css", handle_css);
+#endif
   WebServer.on("/advanced", handle_advanced);
   WebServer.begin();
 }
@@ -37,7 +37,7 @@ void WebServerInit()
 void addMenu(String& str)
 {
   boolean cssfile = false;
-  
+
   str += F("<script language=\"javascript\"><!--\n");
   str += F("function dept_onchange(frmselect) {frmselect.submit();}\n");
   str += F("//--></script>");
@@ -45,17 +45,17 @@ void addMenu(String& str)
   str += Settings.Name;
   str += F("</title>");
 
-  #if FEATURE_SPIFFS
+#if FEATURE_SPIFFS
   File f = SPIFFS.open("esp.css", "r");
   if (f)
   {
     cssfile = true;
     f.close();
   }
-  #else
+#else
   if (Settings.CustomCSS)
     cssfile = true;
-  #endif
+#endif
 
   if (!cssfile)
   {
@@ -89,15 +89,15 @@ void addMenu(String& str)
 #endif
   str += Settings.Name;
 
-  #if FEATURE_SPIFFS
+#if FEATURE_SPIFFS
   f = SPIFFS.open("esp.png", "r");
   if (f)
   {
     str += F("<img src=\"esp.png\" width=50 height=50 align=right >");
     f.close();
-  }  
-  #endif
-  
+  }
+#endif
+
   str += F("</h1><BR><a class=\"button-menu\" href=\".\">Main</a>");
   str += F("<a class=\"button-menu\" href=\"config\">Config</a>");
   str += F("<a class=\"button-menu\" href=\"hardware\">Hardware</a>");
@@ -225,13 +225,15 @@ void handle_root() {
     // disconnect here could result into a crash/reboot...
     if (strcasecmp_P(command, PSTR("wifidisconnect")) == 0)
     {
-      Serial.println(F("WIFI : Disconnecting..."));
+      String log = F("WIFI : Disconnecting...");
+      addLog(LOG_LEVEL_INFO,log);
       cmd_within_mainloop = CMD_WIFI_DISCONNECT;
     }
 
     if (strcasecmp_P(command, PSTR("reboot")) == 0)
     {
-      Serial.println(F("     : Rebooting..."));
+      String log = F("     : Rebooting...");
+      addLog(LOG_LEVEL_INFO,log);
       cmd_within_mainloop = CMD_REBOOT;
     }
 
@@ -288,25 +290,16 @@ void handle_config() {
     controlleruser.toCharArray(tmpString, 26);
     urlDecode(tmpString);
     strcpy(SecuritySettings.ControllerUser, tmpString);
-    controllerpassword.toCharArray(tmpString, 26);
+    controllerpassword.toCharArray(tmpString, 64);
     urlDecode(tmpString);
     strcpy(SecuritySettings.ControllerPassword, tmpString);
-    Settings.Protocol = protocol.toInt();
-    switch (Settings.Protocol)
-    {
-      case PROTOCOL_DOMOTICZ_MQTT:
-        strcpy_P(Settings.MQTTsubscribe, PSTR("domoticz/in"));
-        strcpy_P(Settings.MQTTpublish, PSTR("domoticz/out"));
-        break;
-      case PROTOCOL_OPENHAB_MQTT:
-        strcpy_P(Settings.MQTTsubscribe, PSTR("/%sysname%/#"));
-        strcpy_P(Settings.MQTTpublish, PSTR("/%sysname%/%tskname%/%valname%"));
-        break;
-      case PROTOCOL_PIDOME_MQTT:
-        strcpy_P(Settings.MQTTsubscribe, PSTR("/Home/#"));
-        strcpy_P(Settings.MQTTpublish, PSTR("/hooks/devices/%id%/SensorData/%valname%"));
-        break;
-    }
+    if (Settings.Protocol != protocol.toInt())
+      {
+        Settings.Protocol = protocol.toInt();
+        byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+        if (Protocol[ProtocolIndex].usesMQTT)
+          CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, 0);
+      }
     Settings.Delay = sensordelay.toInt();
     Settings.deepSleep = (deepsleep == "on");
     espip.toCharArray(tmpString, 26);
@@ -342,24 +335,16 @@ void handle_config() {
 
   reply += F("'><TR><TD>Protocol:");
   byte choice = Settings.Protocol;
-  String options[7];
-  options[0] = F("");
-  options[1] = F("Domoticz HTTP");
-  options[2] = F("Domoticz MQTT");
-  options[3] = F("Nodo Telnet");
-  options[4] = F("ThingsSpeak HTTP");
-  options[5] = F("OpenHAB MQTT");
-  options[6] = F("PiDome MQTT");
   reply += F("<TD><select name='protocol' LANGUAGE=javascript onchange=\"return dept_onchange(frmselect)\" >");
-  for (byte x = 0; x < 7; x++)
+  for (byte x = 0; x <= protocolCount; x++)
   {
     reply += F("<option value='");
-    reply += x;
+    reply += Protocol[x].Number;
     reply += "'";
-    if (choice == x)
+    if (choice == Protocol[x].Number)
       reply += F(" selected");
     reply += ">";
-    reply += options[x];
+    reply += Protocol[x].Name;
     reply += F("</option>");
   }
   reply += F("</select>");
@@ -378,7 +363,8 @@ void handle_config() {
     reply += SecuritySettings.ControllerUser;
   }
 
-  if (Settings.Protocol == PROTOCOL_NODO_TELNET or Settings.Protocol == PROTOCOL_THINGSPEAK)
+  byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+  if (Protocol[ProtocolIndex].usesPassword)
   {
     reply += F("'><TR><TD>Controller Password:<TD><input type='text' name='controllerpassword' value='");
     reply += SecuritySettings.ControllerPassword;
@@ -592,9 +578,17 @@ void handle_devices() {
     reply += F("<TD>");
     reply += ExtraTaskSettings.TaskDeviceName;
     reply += F("<TD>");
-    if (Device[DeviceIndex].Ports != 0)
-      reply += Settings.TaskDevicePort[x];
+
+    #ifdef ESP_EASY
+      byte customConfig = false;
+      customConfig = PluginCall(PLUGIN_WEBFORM_SHOW_CONFIG, &TempEvent, reply);
+      if (!customConfig)
+        if (Device[DeviceIndex].Ports != 0)
+          reply += Settings.TaskDevicePort[x];
+    #endif
+
     reply += F("<TD>");
+    
     if (Settings.TaskDeviceID[x] != 0)
       reply += Settings.TaskDeviceID[x];
 
@@ -624,7 +618,7 @@ void handle_devices() {
     reply += F("<TD>");
     byte customValues = false;
 #ifdef ESP_EASY
-    customValues = PluginCall(PLUGIN_WEBFORM_VALUES, &TempEvent, reply);
+    customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, reply);
 #endif
 #ifdef ESP_CONNEXIO
     struct NodoEventStruct TempEvent;
@@ -1025,11 +1019,11 @@ void handle_tools() {
   reply += F("<TR><TD>Settings<TD><a class=\"button-link\" href=\"/upload\">Load</a>");
   reply += F("<a class=\"button-link\" href=\"/download\">Save</a>");
 
-  #if FEATURE_SPIFFS
-    reply += F("<a class=\"button-link\" href=\"/filelist\">List</a><BR><BR>");
-  #else
-    reply += F("<BR><BR>");
-  #endif
+#if FEATURE_SPIFFS
+  reply += F("<a class=\"button-link\" href=\"/filelist\">List</a><BR><BR>");
+#else
+  reply += F("<BR><BR>");
+#endif
 
   reply += F("<TR><TD>Command<TD>");
   reply += F("<input type='text' name='cmd' value='");
@@ -1251,9 +1245,9 @@ void handle_advanced() {
   String serialloglevel = WebServer.arg("serialloglevel");
   String webloglevel = WebServer.arg("webloglevel");
   String baudrate = WebServer.arg("baudrate");
-  #if !FEATURE_SPIFFS
-    String customcss = WebServer.arg("customcss");
-  #endif
+#if !FEATURE_SPIFFS
+  String customcss = WebServer.arg("customcss");
+#endif
   String edit = WebServer.arg("edit");
 
   if (edit.length() != 0)
@@ -1273,9 +1267,9 @@ void handle_advanced() {
     Settings.SerialLogLevel = serialloglevel.toInt();
     Settings.WebLogLevel = webloglevel.toInt();
     Settings.BaudRate = baudrate.toInt();
-    #if !FEATURE_SPIFFS
-      Settings.CustomCSS = (customcss == "on");
-    #endif
+#if !FEATURE_SPIFFS
+    Settings.CustomCSS = (customcss == "on");
+#endif
     SaveSettings();
   }
 
@@ -1320,14 +1314,14 @@ void handle_advanced() {
   reply += Settings.BaudRate;
   reply += F("'>");
 
-  #if !FEATURE_SPIFFS
+#if !FEATURE_SPIFFS
   reply += F("<TR><TD>Custom CSS:<TD>");
   if (Settings.CustomCSS)
     reply += F("<input type=checkbox name='customcss' checked>");
   else
     reply += F("<input type=checkbox name='customcss'>");
-  #endif
-  
+#endif
+
   reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'>");
   reply += F("<input type='hidden' name='edit' value='1'>");
   reply += F("</table></form>");
@@ -1453,7 +1447,8 @@ void handleFileUpload() {
   if (!isLoggedIn()) return;
 
   static boolean valid = false;
-
+  String log = "";
+  
   HTTPUpload& upload = WebServer.upload();
 
   if (upload.filename.c_str()[0] == 0)
@@ -1464,7 +1459,9 @@ void handleFileUpload() {
 
   if (upload.status == UPLOAD_FILE_START)
   {
-    Serial.print(F("Upload: START, filename: ")); Serial.println(upload.filename);
+    log = F("Upload: START, filename: ");
+    log += upload.filename;
+    addLog(LOG_LEVEL_INFO,log);
     valid = false;
     uploadResult = 0;
   }
@@ -1484,8 +1481,6 @@ void handleFileUpload() {
           byte b = upload.buf[x];
           memcpy((byte*)&Temp + x, &b, 1);
         }
-        Serial.println(Temp.PID);
-        Serial.println(Temp.Version);
         if (Temp.Version == VERSION && Temp.PID == ESP_PROJECT_PID)
           valid = true;
       }
@@ -1496,19 +1491,22 @@ void handleFileUpload() {
       }
       if (valid)
       {
-        Serial.println(F("Create file"));
         // once we're safe, remove file and create empty one...
         SPIFFS.remove((char *)upload.filename.c_str());
         uploadFile = SPIFFS.open(upload.filename.c_str(), "w");
       }
     }
     if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
-    Serial.print(F("Upload: WRITE, Bytes: ")); Serial.println(upload.currentSize);
+    log = F("Upload: WRITE, Bytes: ");
+    log += upload.currentSize;
+    addLog(LOG_LEVEL_INFO,log);
   }
   else if (upload.status == UPLOAD_FILE_END)
   {
     if (uploadFile) uploadFile.close();
-    Serial.print(F("Upload: END, Size: ")); Serial.println(upload.totalSize);
+    log = F("Upload: END, Size: ");
+    log += upload.totalSize;
+    addLog(LOG_LEVEL_INFO,log);
   }
 
   if (valid)
@@ -1579,11 +1577,11 @@ void handle_filelist() {
 
   String fdelete = WebServer.arg("delete");
 
-  if (fdelete.length() >0)
-    {
-      SPIFFS.remove(fdelete);
-    }
-    
+  if (fdelete.length() > 0)
+  {
+    SPIFFS.remove(fdelete);
+  }
+
   String reply = "";
   addMenu(reply);
   reply += F("<table border='1'><TH><TH>Filename:<TH>Size");
@@ -1592,13 +1590,13 @@ void handle_filelist() {
   while (dir.next())
   {
     reply += F("<TR><TD>");
-    if (dir.fileName() != "config.txt" && dir.fileName() !="security.txt")
-      {
+    if (dir.fileName() != "config.txt" && dir.fileName() != "security.txt")
+    {
       reply += F("<a class=\"button-link\" href=\"filelist?delete=");
       reply += dir.fileName();
       reply += F("\">Del</a>");
-      }
-      
+    }
+
     reply += F("<TD><a href=\"");
     reply += dir.fileName();
     reply += F("\">");
@@ -1643,15 +1641,15 @@ void handle_download() {
   WebServer.setContentLength(32768);
   WebServer.sendHeader("Content-Disposition", "attachment; filename=config.txt");
   WebServer.send(200, "application/octet-stream", "");
-  
-  for (uint32_t _sector=_sectorStart; _sector < _sectorEnd; _sector++)
+
+  for (uint32_t _sector = _sectorStart; _sector < _sectorEnd; _sector++)
   {
     // load entire sector from flash into memory
     noInterrupts();
     spi_flash_read(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE);
     interrupts();
     client.write((const char*)data, 2048);
-    client.write((const char*)data+2028, 2048);
+    client.write((const char*)data + 2028, 2048);
   }
   delete [] data;
 }
@@ -1663,7 +1661,7 @@ void handle_download() {
 void handle_css() {
   if (!isLoggedIn()) return;
 
-  int size=0;
+  int size = 0;
   uint32_t _sector = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
   uint8_t* data = new uint8_t[FLASH_EEPROM_SIZE];
   _sector += 9;
@@ -1674,12 +1672,12 @@ void handle_css() {
   interrupts();
 
   // check size of css file content
-  for (int x=0; x < 4096; x++)
+  for (int x = 0; x < 4096; x++)
     if (data[x] == 0)
-      {
-        size=x;
-        break;
-      }
+    {
+      size = x;
+      break;
+    }
   WiFiClient client = WebServer.client();
   WebServer.setContentLength(size);
   WebServer.send(200, "text/css", "");
@@ -1711,6 +1709,7 @@ void handleFileUpload()
 {
   if (!isLoggedIn()) return;
 
+  String log = "";
   static byte filetype = 0;
   static byte page = 0;
   static uint8_t* data;
@@ -1719,30 +1718,31 @@ void handleFileUpload()
 
   if (upload.status == UPLOAD_FILE_START)
   {
-    filetype=0;
+    filetype = 0;
     if (strcasecmp(upload.filename.c_str(), "config.txt") == 0)
-      filetype=1;
+      filetype = 1;
     if (strcasecmp(upload.filename.c_str(), "esp.css") == 0)
-      {
-        filetype=2;
-        Settings.CustomCSS=true;
-      }
-    Serial.print(F("Upload start "));
-    Serial.println((char *)upload.filename.c_str());
+    {
+      filetype = 2;
+      Settings.CustomCSS = true;
+    }
+    log = F("Upload start ");
+    log += (char *)upload.filename.c_str();
+    addLog(LOG_LEVEL_INFO,log);
     page = 0;
     data = new uint8_t[FLASH_EEPROM_SIZE];
   }
 
-  if (upload.status == UPLOAD_FILE_WRITE && filetype !=0)
+  if (upload.status == UPLOAD_FILE_WRITE && filetype != 0)
   {
     uploadSize = upload.currentSize;
-    
-    int base=0;
+
+    int base = 0;
     if (page % 2)
-      base +=2048;
+      base += 2048;
     memcpy((byte*)data + base, upload.buf, upload.currentSize);
     if (filetype == 2)
-      data[upload.currentSize + upload.totalSize]=0; // eof marker
+      data[upload.currentSize + upload.totalSize] = 0; // eof marker
 
     if ((page % 2) || (filetype == 2))
     {
@@ -1750,14 +1750,14 @@ void handleFileUpload()
       if (filetype == 2)
         sectorOffset = 9;
       uint32_t _sector = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
-      _sector += page/2;
+      _sector += page / 2;
       _sector += sectorOffset;
       noInterrupts();
-      if(spi_flash_erase_sector(_sector) == SPI_FLASH_RESULT_OK)
-        if(spi_flash_write(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
-          {
-            //Serial.println("flash save ok");
-          }
+      if (spi_flash_erase_sector(_sector) == SPI_FLASH_RESULT_OK)
+        if (spi_flash_write(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
+        {
+          //Serial.println("flash save ok");
+        }
       interrupts();
       delay(10);
     }
@@ -1766,7 +1766,8 @@ void handleFileUpload()
 
   if (upload.status == UPLOAD_FILE_END)
   {
-    Serial.println(F("Upload end"));
+    log = F("Upload end");
+    addLog(LOG_LEVEL_INFO,log);
     delete [] data;
     if (filetype == 1)
       LoadSettings();
