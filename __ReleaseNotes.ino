@@ -1,3 +1,9 @@
+// R37 12-10-2015
+// Added support for I2C SI7021 Temperature Humidity sensor
+
+// R36 11-10-2015
+// Added support to control (max 2) Servo motors using http control commands
+
 // R35 11-10-2015
 // Finally finished the LCD plugin with some basic functionality
 // Preliminary controller support for EmonCMS
