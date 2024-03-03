@@ -63,6 +63,7 @@
 //   4 = ThingSpeak
 //   5 = OpenHAB MQTT
 //   6 = PiDome MQTT
+//   7 = EmonCMS
 #define UNIT                0
 
 // ********************************************************************************
@@ -71,7 +72,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              36
+#define BUILD                              41
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -106,6 +107,7 @@
 #define SENSOR_TYPE_TEMP_BARO               3
 #define SENSOR_TYPE_SWITCH                 10
 #define SENSOR_TYPE_DIMMER                 11
+#define SENSOR_TYPE_LONG                   20
 
 #define PLUGIN_INIT_ALL                     1
 #define PLUGIN_INIT                         2
@@ -239,6 +241,7 @@ struct DeviceStruct
   boolean InverseLogicOption;
   boolean FormulaOption;
   byte ValueCount;
+  boolean Custom;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
 struct ProtocolStruct
@@ -392,6 +395,9 @@ void setup()
 }
 
 
+unsigned long start = 0;
+unsigned long elapsed = 0;
+
 /*********************************************************************************************\
  * MAIN LOOP
 \*********************************************************************************************/
@@ -441,15 +447,19 @@ void loop()
     // Perform regular checks, 10 times/sec
     if (millis() > timer100ms)
     {
+      start = micros();
       timer100ms = millis() + 100;
       PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
+      elapsed = micros() - start;
     }
 
     // Perform regular checks, 1 time/sec
     if (millis() > timer1s)
     {
+      unsigned long timer = micros();
       PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
-
+      timer = micros() - timer;
+      
       timer1s = millis() + 1000;
       WifiCheck();
 
@@ -459,6 +469,14 @@ void loop()
           WebLoggedInTimer++;
         if (WebLoggedInTimer > 300)
           WebLoggedIn = false;
+      }
+      if (Settings.SerialLogLevel == 5)
+      {
+        Serial.print("10 ps:");
+        Serial.print(elapsed);
+        Serial.print(" uS  1 ps:");
+        Serial.print(timer);
+        Serial.println(" uS");
       }
     }
 
