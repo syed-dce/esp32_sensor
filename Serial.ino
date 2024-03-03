@@ -23,7 +23,8 @@ void ExecuteCommand(char *Line)
 
   if (strcasecmp_P(Command, PSTR("variableset")) == 0)
   {
-    UserVar[Par1-1]=Par2;
+    if (GetArgv(Line, TmpStr1, 3))
+      UserVar[Par1-1] = atof(TmpStr1);
   }
 
   if (strcasecmp_P(Command, PSTR("gpio")) == 0)
@@ -167,7 +168,12 @@ void serial()
   {
     yield();
     SerialInByte = Serial.read();
-
+    if (SerialInByte == 255) // binary data...
+    {
+      Serial.flush();
+      return;      
+    }
+    
     if (isprint(SerialInByte))
     {
       if (SerialInByteCounter < INPUT_BUFFER_SIZE) // add char to string if it still fits

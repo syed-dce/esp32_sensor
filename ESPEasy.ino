@@ -28,18 +28,26 @@
 // Simple Arduino sketch for ESP module, supporting:
 //   Dallas OneWire DS18b20 temperature sensors
 //   DHT11/22 humidity sensors
-//   BH1750 I2C Lux sensor
+//   SI7021 I2C temperature/humidity sensors
+//   TSL2561 I2C Luminosity sensor
+//   BH1750 I2C Luminosity sensor
 //   BMP085 I2C Barometric Pressure sensor
 //   RFID Wiegand-26 reader
+//   PN532 RFID reader
 //   MCP23017 I2C IO Expanders
+//   PCF8574 I2C IO Expanders
 //   Analog input (ESP-7/12 only)
 //   PCF8591 4 port Analog to Digital converter (I2C)
 //   HC-SR04 Ultrasonic distance sensor
+//   TSOP4838 IR receiver
+//   Sharp GP2Y10 dust sensor
 //   LCD I2C display 4x20 chars
 //   Pulse counters
 //   Simple switch inputs
 //   Direct GPIO output control to drive relais, mosfets, etc
 //   Arduino Pro Mini with IO extender sketch, connected through I2C
+//   Ser2Net server
+
 
 // ********************************************************************************
 //   User specific configuration
@@ -72,7 +80,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              41
+#define BUILD                              44
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -94,6 +102,8 @@
 #define VARS_PER_TASK                       4
 #define PLUGIN_MAX                         64
 #define PLUGIN_CONFIGVAR_MAX                8
+#define PLUGIN_CONFIGFLOATVAR_MAX           4
+#define PLUGIN_CONFIGLONGVAR_MAX            4
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
 #define CPLUGIN_MAX                        16
 
@@ -124,6 +134,8 @@
 #define PLUGIN_WRITE                       13
 #define PLUGIN_EVENT_OUT                   14
 #define PLUGIN_WEBFORM_SHOW_CONFIG         15
+#define PLUGIN_SERIAL_IN                   16
+#define PLUGIN_UDP_IN                      17
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -199,6 +211,8 @@ struct SettingsStruct
   char          MQTTpublish[81];
   char          MQTTsubscribe[81];
   boolean       CustomCSS;
+  float         TaskDevicePluginConfigFloat[TASKS_MAX][PLUGIN_CONFIGFLOATVAR_MAX];
+  long          TaskDevicePluginConfigLong[TASKS_MAX][PLUGIN_CONFIGLONGVAR_MAX];
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -207,7 +221,7 @@ struct ExtraTaskSettingsStruct
   char    TaskDeviceName[26];
   char    TaskDeviceFormula[VARS_PER_TASK][41];
   char    TaskDeviceValueNames[VARS_PER_TASK][26];
-  long    TaskDevicePluginConfig[PLUGIN_EXTRACONFIGVAR_MAX];
+  long    TaskDevicePluginConfigLong[PLUGIN_EXTRACONFIGVAR_MAX];
 } ExtraTaskSettings;
 
 struct EventStruct
@@ -222,6 +236,7 @@ struct EventStruct
   byte OriginTaskIndex;
   String String1;
   String String2;
+  byte *Data;
 };
 
 struct LogStruct
@@ -404,8 +419,11 @@ unsigned long elapsed = 0;
 void loop()
 {
   if (Serial.available())
-    serial();
-
+  {
+    if(!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString))
+      serial();
+  }
+  
   if (systemOK)
   {
     checkUDP();

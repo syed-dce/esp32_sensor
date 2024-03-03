@@ -1,3 +1,15 @@
+// R44 22-11-2015
+// Added basic support for PCA9685, simple pwm output using control web page
+
+// R43 15-11-2015
+// UDP calls to plugins
+// Bugfix for TSL2561 plugin
+
+// R42 08-11-2015
+// Added support for serial to WiFi bridge applications (very experimental state!)
+// Added limited support for local level control like thermostat function (questionable development for a sensor!)
+// Device dropdown list is alphabetically ordered
+
 // R41 01-11-2015
 // Added support for Sharp GP2Y10 dust sensor
 // Added support for PCF8574 IO Expander
