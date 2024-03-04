@@ -67,7 +67,7 @@ byte getProtocolIndex(byte Number)
 /********************************************************************************************\
 * Find positional parameter in a char string
 \*********************************************************************************************/
-boolean GetArgv(const char *string, char *argv, int argc)
+boolean GetArgv(char *string, char *argv, int argc)
 {
   int string_pos = 0, argv_pos = 0, argc_pos = 0;
   char c, d;
@@ -532,10 +532,13 @@ float ul2float(unsigned long ul)
 \*********************************************************************************************/
 void addLog(byte loglevel, String& string)
 {
-  addLog(loglevel, string.c_str());
+  char log[80];
+  string.toCharArray(log,80);
+  addLog(loglevel, log);
 }
 
-void addLog(byte loglevel, const char *line)
+
+void addLog(byte loglevel, char *line)
 {
   if (loglevel <= Settings.SerialLogLevel)
     Serial.println(line);

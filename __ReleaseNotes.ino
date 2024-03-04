@@ -1,38 +1,3 @@
-// R49 08-12-2015
-// Changes to urldecode and WPAKey handling (contributed by ixtrader)
-// Added MQTT authentication (contributed by Chrille)
-// Changing protocol sets default TCP port
-
-// R48 01-12-2015
-// Code cleanup, candidate for Arduino ESP Core 2.0.0.
-
-// R47 29-11-2015
-// Support for using http commands to control OLED en LCD displays
-
-// R46 28-11-2015
-// Added Wiki help button to Protocol dropdown
-// Added basic text message support for I2C OLED SSD1306 display
-
-// R45 22-11-2015
-// Bugfix: PCA9685 plugin needs to be listed in the dropdown list
-//   else counting/sorting will have issues. But it currently has no real purpose
-
-// R44 22-11-2015
-// Added basic support for PCA9685, simple pwm output using control web page
-
-// R43 15-11-2015
-// UDP calls to plugins
-// Bugfix for TSL2561 plugin
-
-// R42 08-11-2015
-// Added support for serial to WiFi bridge applications (very experimental state!)
-// Added limited support for local level control like thermostat function (questionable development for a sensor!)
-// Device dropdown list is alphabetically ordered
-
-// R41 01-11-2015
-// Added support for Sharp GP2Y10 dust sensor
-// Added support for PCF8574 IO Expander
-
 // R40 25-10-2015
 // Added support to read classic Mifare tags with PN532 NFC module
 // Fixed sending of Tag values as a real 32 bit long value (no rounding, no decimal fraction)
@@ -41,10 +6,10 @@
 // Added support for IR signal reception (needs a third party library!)
 
 // R38 13-10-2015
-// Added support for I2C TSL2561 Luminosity Sensor (contributed by Hallard)
+// Added support for I2C TSL2561 Luminosity Sensor
 
 // R37 12-10-2015
-// Added support for I2C SI7021 Temperature Humidity sensor (contributed by Hallard)
+// Added support for I2C SI7021 Temperature Humidity sensor
 
 // R36 11-10-2015
 // Added support to control (max 2) Servo motors using http control commands

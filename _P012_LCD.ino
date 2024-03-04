@@ -10,7 +10,7 @@
 
 #define PLUGIN_012
 #define PLUGIN_ID_012         12
-#define PLUGIN_NAME_012       "Display - LCD2004"
+#define PLUGIN_NAME_012       "LCD Display"
 #define PLUGIN_VALUENAME1_012 "LCD"
 
 boolean Plugin_012(byte function, struct EventStruct *event, String& string)
@@ -44,7 +44,7 @@ boolean Plugin_012(byte function, struct EventStruct *event, String& string)
         strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_012));
         break;
       }
-
+      
     case PLUGIN_WEBFORM_LOAD:
       {
         char deviceTemplate[4][80];
@@ -73,12 +73,15 @@ boolean Plugin_012(byte function, struct EventStruct *event, String& string)
           String arg = "Plugin_012_template";
           arg += varNr + 1;
           arg.toCharArray(argc, 25);
-          String tmpString = urlDecode(WebServer.arg(argc).c_str());
-          strncpy(deviceTemplate[varNr], tmpString.c_str(), sizeof(deviceTemplate[varNr]));
+          String tmpString = WebServer.arg(argc);
+          char tmp[81];
+          tmpString.toCharArray(tmp, 81);
+          urlDecode(tmp);
+          strcpy(deviceTemplate[varNr], tmp);
         }
-
+        
         Settings.TaskDeviceID[event->TaskIndex] = 1; // temp fix, needs a dummy value
-
+        
         SaveCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
         success = true;
         break;
@@ -97,82 +100,62 @@ boolean Plugin_012(byte function, struct EventStruct *event, String& string)
           int leftBracketIndex = tmpString.indexOf('[');
           if (leftBracketIndex == -1)
             newString = tmpString;
-          else
+          byte count = 0;
+          while (leftBracketIndex >= 0 && count < 10 - 1)
           {
-            byte count = 0;
-            while (leftBracketIndex >= 0 && count < 10 - 1)
+            newString += tmpString.substring(0, leftBracketIndex);
+            tmpString = tmpString.substring(leftBracketIndex + 1);
+            int rightBracketIndex = tmpString.indexOf(']');
+            if (rightBracketIndex)
             {
-              newString += tmpString.substring(0, leftBracketIndex);
-              tmpString = tmpString.substring(leftBracketIndex + 1);
-              int rightBracketIndex = tmpString.indexOf(']');
-              if (rightBracketIndex)
+              tmpStringMid = tmpString.substring(0, rightBracketIndex);
+              tmpString = tmpString.substring(rightBracketIndex + 1);
+              int hashtagIndex = tmpStringMid.indexOf('#');
+              String deviceName = tmpStringMid.substring(0, hashtagIndex);
+              String valueName = tmpStringMid.substring(hashtagIndex + 1);
+              String valueFormat = "";
+              hashtagIndex = valueName.indexOf('#');
+              if (hashtagIndex >= 0)
               {
-                tmpStringMid = tmpString.substring(0, rightBracketIndex);
-                tmpString = tmpString.substring(rightBracketIndex + 1);
-                int hashtagIndex = tmpStringMid.indexOf('#');
-                String deviceName = tmpStringMid.substring(0, hashtagIndex);
-                String valueName = tmpStringMid.substring(hashtagIndex + 1);
-                String valueFormat = "";
-                hashtagIndex = valueName.indexOf('#');
-                if (hashtagIndex >= 0)
+                valueFormat = valueName.substring(hashtagIndex + 1);
+                valueName = valueName.substring(0, hashtagIndex);
+              }
+              for (byte y = 0; y < TASKS_MAX; y++)
+              {
+                LoadTaskSettings(y);
+                if (ExtraTaskSettings.TaskDeviceName[0] != 0)
                 {
-                  valueFormat = valueName.substring(hashtagIndex + 1);
-                  valueName = valueName.substring(0, hashtagIndex);
-                }
-                for (byte y = 0; y < TASKS_MAX; y++)
-                {
-                  LoadTaskSettings(y);
-                  if (ExtraTaskSettings.TaskDeviceName[0] != 0)
+                  if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
                   {
-                    if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
-                    {
-                      for (byte z = 0; z < VARS_PER_TASK; z++)
-                        if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
+                    for (byte z = 0; z < VARS_PER_TASK; z++)
+                      if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
+                      {
+                        // here we know the task and value, so find the uservar
+                        String value = String(UserVar[y * VARS_PER_TASK + z]);
+                        if (valueFormat == "R")
                         {
-                          // here we know the task and value, so find the uservar
-                          String value = String(UserVar[y * VARS_PER_TASK + z]);
-                          if (valueFormat == "R")
-                          {
-                            int filler = 20 - newString.length() - value.length() - tmpString.length() ;
-                            for (byte f = 0; f < filler; f++)
-                              newString += " ";
-                          }
-                          newString += String(value);
+                          int filler = 20 - newString.length() - value.length() - tmpString.length() ;
+                          for (byte f = 0; f < filler; f++)
+                            newString += " ";
                         }
-                    }
+                        newString += String(value);
+                      }
                   }
                 }
               }
-              leftBracketIndex = tmpString.indexOf('[');
-              count++;
             }
-            newString += tmpString;
+            leftBracketIndex = tmpString.indexOf('[');
+            count++;
           }
+          newString += tmpString;
+          //Serial.print("LCD  : ");
+          //Serial.println(newString);
           lcd.setCursor(0, x);
-          if (newString != "")
-            lcd.print(newString);
+          lcd.print(newString);
         }
         success = false;
         break;
       }
-
-    case PLUGIN_WRITE:
-      {
-        String tmpString  = string;
-        int argIndex = tmpString.indexOf(',');
-        if (argIndex)
-          tmpString = tmpString.substring(0, argIndex);
-        if (tmpString.equalsIgnoreCase("LCD"))
-        {
-          success = true;
-          argIndex = string.lastIndexOf(',');
-          tmpString = urlDecode(string.substring(argIndex + 1).c_str());
-          lcd.setCursor(event->Par2 - 1, event->Par1 - 1);
-          lcd.print(tmpString.c_str());
-        }
-        break;
-      }
-
   }
   return success;
 }

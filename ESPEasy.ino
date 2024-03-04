@@ -25,34 +25,21 @@
 *
 *************************************************************************************************************************/
 
-//   Simple Arduino sketch for ESP module, supporting:
-//   =================================================================================
-//   Simple switch inputs and direct GPIO output control to drive relais, mosfets, etc
-//   Analog input (ESP-7/12 only)
-//   Pulse counters
+// Simple Arduino sketch for ESP module, supporting:
 //   Dallas OneWire DS18b20 temperature sensors
 //   DHT11/22 humidity sensors
+//   BH1750 I2C Lux sensor
 //   BMP085 I2C Barometric Pressure sensor
-//   PCF8591 4 port Analog to Digital converter (I2C)
 //   RFID Wiegand-26 reader
 //   MCP23017 I2C IO Expanders
-//   BH1750 I2C Luminosity sensor
-//   Arduino Pro Mini with IO extender sketch, connected through I2C
-//   LCD I2C display 4x20 chars
+//   Analog input (ESP-7/12 only)
+//   PCF8591 4 port Analog to Digital converter (I2C)
 //   HC-SR04 Ultrasonic distance sensor
-//   SI7021 I2C temperature/humidity sensors
-//   TSL2561 I2C Luminosity sensor
-//   TSOP4838 IR receiver
-//   PN532 RFID reader
-//   Sharp GP2Y10 dust sensor
-//   PCF8574 I2C IO Expanders
-//   OLED I2C display with SSD1306 driver
-
-//   Experimental/Preliminary:
-//   =========================
-//   Ser2Net server
-//   Local Level Control to GPIO
-//   PCA9685 16 channel I2C PWM driver
+//   LCD I2C display 4x20 chars
+//   Pulse counters
+//   Simple switch inputs
+//   Direct GPIO output control to drive relais, mosfets, etc
+//   Arduino Pro Mini with IO extender sketch, connected through I2C
 
 // ********************************************************************************
 //   User specific configuration
@@ -85,7 +72,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              49
+#define BUILD                              40
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -107,8 +94,6 @@
 #define VARS_PER_TASK                       4
 #define PLUGIN_MAX                         64
 #define PLUGIN_CONFIGVAR_MAX                8
-#define PLUGIN_CONFIGFLOATVAR_MAX           4
-#define PLUGIN_CONFIGLONGVAR_MAX            4
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
 #define CPLUGIN_MAX                        16
 
@@ -139,8 +124,6 @@
 #define PLUGIN_WRITE                       13
 #define PLUGIN_EVENT_OUT                   14
 #define PLUGIN_WEBFORM_SHOW_CONFIG         15
-#define PLUGIN_SERIAL_IN                   16
-#define PLUGIN_UDP_IN                      17
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -216,8 +199,6 @@ struct SettingsStruct
   char          MQTTpublish[81];
   char          MQTTsubscribe[81];
   boolean       CustomCSS;
-  float         TaskDevicePluginConfigFloat[TASKS_MAX][PLUGIN_CONFIGFLOATVAR_MAX];
-  long          TaskDevicePluginConfigLong[TASKS_MAX][PLUGIN_CONFIGLONGVAR_MAX];
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -226,7 +207,7 @@ struct ExtraTaskSettingsStruct
   char    TaskDeviceName[26];
   char    TaskDeviceFormula[VARS_PER_TASK][41];
   char    TaskDeviceValueNames[VARS_PER_TASK][26];
-  long    TaskDevicePluginConfigLong[PLUGIN_EXTRACONFIGVAR_MAX];
+  long    TaskDevicePluginConfig[PLUGIN_EXTRACONFIGVAR_MAX];
 } ExtraTaskSettings;
 
 struct EventStruct
@@ -241,7 +222,6 @@ struct EventStruct
   byte OriginTaskIndex;
   String String1;
   String String2;
-  byte *Data;
 };
 
 struct LogStruct
@@ -261,7 +241,6 @@ struct DeviceStruct
   boolean InverseLogicOption;
   boolean FormulaOption;
   byte ValueCount;
-  boolean Custom;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
 struct ProtocolStruct
@@ -271,7 +250,6 @@ struct ProtocolStruct
   boolean usesAccount;
   boolean usesPassword;
   char Name[20];
-  int defaultPort;
 } Protocol[CPLUGIN_MAX];
 
 int deviceCount = -1;
@@ -416,20 +394,14 @@ void setup()
 }
 
 
-unsigned long start = 0;
-unsigned long elapsed = 0;
-
 /*********************************************************************************************\
  * MAIN LOOP
 \*********************************************************************************************/
 void loop()
 {
   if (Serial.available())
-  {
-    if(!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString))
-      serial();
-  }
-  
+    serial();
+
   if (systemOK)
   {
     checkUDP();
@@ -471,19 +443,15 @@ void loop()
     // Perform regular checks, 10 times/sec
     if (millis() > timer100ms)
     {
-      start = micros();
       timer100ms = millis() + 100;
       PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
-      elapsed = micros() - start;
     }
 
     // Perform regular checks, 1 time/sec
     if (millis() > timer1s)
     {
-      unsigned long timer = micros();
       PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
-      timer = micros() - timer;
-      
+
       timer1s = millis() + 1000;
       WifiCheck();
 
@@ -493,14 +461,6 @@ void loop()
           WebLoggedInTimer++;
         if (WebLoggedInTimer > 300)
           WebLoggedIn = false;
-      }
-      if (Settings.SerialLogLevel == 5)
-      {
-        Serial.print("10 ps:");
-        Serial.print(elapsed);
-        Serial.print(" uS  1 ps:");
-        Serial.print(timer);
-        Serial.println(" uS");
       }
     }
 
@@ -564,7 +524,9 @@ void SensorSend()
             String svalue = String(value);
             formula.replace("%pvalue%", spreValue);
             formula.replace("%value%", svalue);
-            byte error = Calculate(formula.c_str(), &result);
+            char TmpStr[26];
+            formula.toCharArray(TmpStr, 25);
+            byte error = Calculate(TmpStr, &result);
             if (error == 0)
               UserVar[varIndex + varNr] = result;
           }

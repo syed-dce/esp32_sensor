@@ -6,9 +6,9 @@ boolean sendData(struct EventStruct *event)
   LoadTaskSettings(event->TaskIndex);
   byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
   CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_SEND, event);
-
+      
   PluginCall(PLUGIN_EVENT_OUT, event, dummyString);
-
+  
   if (Settings.MessageDelay != 0)
   {
     char log[30];
@@ -31,10 +31,10 @@ void callback(const MQTT::Publish& pub) {
   String topic = pub.topic();
 
   char c_topic[80];
-  topic.toCharArray(c_topic, 80);
+  topic.toCharArray(c_topic,80);
   sprintf_P(log, PSTR("%s%s"), "MQTT : Topic ", c_topic);
   addLog(LOG_LEVEL_DEBUG, log);
-  
+
   struct EventStruct TempEvent;
   TempEvent.String1 = topic;
   TempEvent.String2 = message;
@@ -60,30 +60,23 @@ void MQTTConnect()
   for (byte x = 1; x < 3; x++)
   {
     String log = "";
-   boolean MQTTresult = false;
-   
-   if ((SecuritySettings.ControllerUser) && (SecuritySettings.ControllerPassword))
-     MQTTresult = (MQTTclient.connect(MQTT::Connect(clientid).set_auth(SecuritySettings.ControllerUser, SecuritySettings.ControllerPassword)));
-   else
-     MQTTresult = (MQTTclient.connect(clientid));
-     
-   if (MQTTresult)
-   {
+    if (MQTTclient.connect(clientid))
+    {
       log = F("MQTT : Connected to broker");
-      addLog(LOG_LEVEL_INFO, log);
+      addLog(LOG_LEVEL_INFO,log);
       subscribeTo = Settings.MQTTsubscribe;
       subscribeTo.replace("%sysname%", Settings.Name);
       MQTTclient.subscribe(subscribeTo);
       log = F("Subscribed to: ");
       log += subscribeTo;
-      addLog(LOG_LEVEL_INFO, log);
+      addLog(LOG_LEVEL_INFO,log);
       break; // end loop if succesfull
     }
     else
-    {
-      log = F("MQTT : Failed to connected to broker");
-      addLog(LOG_LEVEL_ERROR, log);
-    }
+      {
+        log = F("MQTT : Failed to connected to broker");
+        addLog(LOG_LEVEL_ERROR,log);
+      }
 
     delay(500);
   }
@@ -204,7 +197,7 @@ boolean nodeVariableCopy(byte var, byte unit)
 /*********************************************************************************************\
  * Syslog client
 \*********************************************************************************************/
-void syslog(const char *message)
+void syslog(char *message)
 {
   if (Settings.Syslog_IP[0] != 0)
   {
@@ -231,14 +224,18 @@ void checkUDP()
   int packetSize = portRX.parsePacket();
   if (packetSize)
   {
-    IPAddress remoteIP = portRX.remoteIP();
     char packetBuffer[128];
     int len = portRX.read(packetBuffer, 128);
     if (packetBuffer[0] != 255)
     {
       packetBuffer[len] = 0;
       addLog(LOG_LEVEL_DEBUG, packetBuffer);
+#ifdef ESP_CONNEXIO
+      ExecuteLine(packetBuffer, VALUE_SOURCE_SERIAL);
+#endif
+#ifdef ESP_EASY
       ExecuteCommand(packetBuffer);
+#endif
     }
     else
     {
@@ -269,15 +266,6 @@ void checkUDP()
             char log[80];
             sprintf_P(log, PSTR("UDP  : %s,%s,%u"), macaddress, ipaddress, unit);
             addLog(LOG_LEVEL_DEBUG_MORE, log);
-            break;
-          }
-        default:
-          {
-            struct EventStruct TempEvent;
-            TempEvent.Data = (byte*)packetBuffer;
-            TempEvent.Par1 = remoteIP[3];
-            PluginCall(PLUGIN_UDP_IN, &TempEvent, dummyString);
-            break;
           }
       }
     }
