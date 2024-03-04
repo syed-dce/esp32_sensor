@@ -8,9 +8,6 @@ void WebServerInit()
   WebServer.on("/config", handle_config);
   WebServer.on("/hardware", handle_hardware);
   WebServer.on("/devices", handle_devices);
-#ifdef ESP_CONNEXIO
-  WebServer.on("/eventlist", handle_eventlist);
-#endif
   WebServer.on("/log", handle_log);
   WebServer.on("/tools", handle_tools);
   WebServer.on("/i2cscanner", handle_i2cscanner);
@@ -80,13 +77,7 @@ void addMenu(String& str)
 
   str += F("</head>");
 
-  str += F("<h1>Welcome to ESP ");
-#ifdef ESP_CONNEXIO
-  str += F("Connexio : ");
-#endif
-#ifdef ESP_EASY
-  str += F("Easy : ");
-#endif
+  str += F("<h1>Welcome");
   str += Settings.Name;
 
 #if FEATURE_SPIFFS
@@ -102,9 +93,6 @@ void addMenu(String& str)
   str += F("<a class=\"button-menu\" href=\"config\">Config</a>");
   str += F("<a class=\"button-menu\" href=\"hardware\">Hardware</a>");
   str += F("<a class=\"button-menu\" href=\"devices\">Devices</a>");
-#ifdef ESP_CONNEXIO
-  str += F("<a class=\"button-menu\" href=\"eventlist\">Eventlist</a>");
-#endif
   str += F("<a class=\"button-menu\" href=\"tools\">Tools</a><BR><BR>");
 }
 
@@ -125,25 +113,16 @@ void handle_root() {
   if (!isLoggedIn()) return;
 
   int freeMem = ESP.getFreeHeap();
-  String webrequest = WebServer.arg("cmd");
-  char command[80];
-  command[0] = 0;
-  webrequest.toCharArray(command, 80);
-  urlDecode(command);
+  String sCommand = urlDecode(WebServer.arg("cmd").c_str());
 
-  if ((strcasecmp_P(command, PSTR("wifidisconnect")) != 0) && (strcasecmp_P(command, PSTR("reboot")) != 0))
+  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0))
   {
     String reply = "";
     addMenu(reply);
 
     printToWeb = true;
     printWebString = "";
-#ifdef ESP_CONNEXIO
-    ExecuteLine(command, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
-    ExecuteCommand(command);
-#endif
+    ExecuteCommand(sCommand.c_str());
 
     reply += printWebString;
     reply += F("<form>");
@@ -223,14 +202,14 @@ void handle_root() {
     // have to disconnect or reboot from within the main loop
     // because the webconnection is still active at this point
     // disconnect here could result into a crash/reboot...
-    if (strcasecmp_P(command, PSTR("wifidisconnect")) == 0)
+    if (strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) == 0)
     {
       String log = F("WIFI : Disconnecting...");
       addLog(LOG_LEVEL_INFO, log);
       cmd_within_mainloop = CMD_WIFI_DISCONNECT;
     }
 
-    if (strcasecmp_P(command, PSTR("reboot")) == 0)
+    if (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) == 0)
     {
       String log = F("     : Rebooting...");
       addLog(LOG_LEVEL_INFO, log);
@@ -250,53 +229,42 @@ void handle_config() {
 
   char tmpString[64];
 
-  String name = WebServer.arg("name");
-  String password = WebServer.arg("password");
-  String ssid = WebServer.arg("ssid");
-  String key = WebServer.arg("key");
-  String controllerip = WebServer.arg("controllerip");
-  String controllerport = WebServer.arg("controllerport");
-  String protocol = WebServer.arg("protocol");
-  String controlleruser = WebServer.arg("controlleruser");
-  String controllerpassword = WebServer.arg("controllerpassword");
-  String sensordelay = WebServer.arg("delay");
-  String deepsleep = WebServer.arg("deepsleep");
-  String espip = WebServer.arg("espip");
-  String espgateway = WebServer.arg("espgateway");
-  String espsubnet = WebServer.arg("espsubnet");
-  String unit = WebServer.arg("unit");
-  String apkey = WebServer.arg("apkey");
+  String name = urlDecode(WebServer.arg("name").c_str());
+  String password = urlDecode(WebServer.arg("password").c_str());
+  String ssid = urlDecode(WebServer.arg("ssid").c_str());
+  String key = urlDecode(WebServer.arg("key").c_str());
+  String controllerip = urlDecode(WebServer.arg("controllerip").c_str());
+  String controllerport = urlDecode(WebServer.arg("controllerport").c_str());
+  String protocol = urlDecode(WebServer.arg("protocol").c_str());
+  String controlleruser = urlDecode(WebServer.arg("controlleruser").c_str());
+  String controllerpassword = urlDecode(WebServer.arg("controllerpassword").c_str());
+  String sensordelay = urlDecode(WebServer.arg("delay").c_str());
+  String deepsleep = urlDecode(WebServer.arg("deepsleep").c_str());
+  String espip = urlDecode(WebServer.arg("espip").c_str());
+  String espgateway = urlDecode(WebServer.arg("espgateway").c_str());
+  String espsubnet = urlDecode(WebServer.arg("espsubnet").c_str());
+  String unit = urlDecode(WebServer.arg("unit").c_str());
+  String apkey = urlDecode(WebServer.arg("apkey").c_str());
 
   if (ssid[0] != 0)
   {
-    name.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(Settings.Name, tmpString);
-    password.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.Password, tmpString);
-    ssid.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiSSID, tmpString);
-    key.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiKey, tmpString);
-    apkey.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiAPKey, tmpString);
+    strncpy(Settings.Name, name.c_str(), sizeof(Settings.Name));
+    strncpy(SecuritySettings.Password, password.c_str(), sizeof(SecuritySettings.Password));
+    strncpy(SecuritySettings.WifiSSID, ssid.c_str(), sizeof(SecuritySettings.WifiSSID));
+    strncpy(SecuritySettings.WifiKey, key.c_str(), sizeof(SecuritySettings.WifiKey));
+    strncpy(SecuritySettings.WifiAPKey, apkey.c_str(), sizeof(SecuritySettings.WifiAPKey));
+
     controllerip.toCharArray(tmpString, 26);
     str2ip(tmpString, Settings.Controller_IP);
     Settings.ControllerPort = controllerport.toInt();
-    controlleruser.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.ControllerUser, tmpString);
-    controllerpassword.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.ControllerPassword, tmpString);
+    
+    strncpy(SecuritySettings.ControllerUser, controlleruser.c_str(), sizeof(SecuritySettings.ControllerUser));
+    strncpy(SecuritySettings.ControllerPassword, controllerpassword.c_str(), sizeof(SecuritySettings.ControllerPassword));
     if (Settings.Protocol != protocol.toInt())
     {
       Settings.Protocol = protocol.toInt();
       byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+      Settings.ControllerPort = Protocol[ProtocolIndex].defaultPort;
       if (Protocol[ProtocolIndex].usesMQTT)
         CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, 0);
     }
@@ -348,6 +316,7 @@ void handle_config() {
     reply += F("</option>");
   }
   reply += F("</select>");
+  reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyProtocols\" target=\"_blank\">?</a>");
 
   reply += F("<TR><TD>Controller IP:<TD><input type='text' name='controllerip' value='");
   char str[20];
@@ -357,13 +326,13 @@ void handle_config() {
   reply += F("'><TR><TD>Controller Port:<TD><input type='text' name='controllerport' value='");
   reply += Settings.ControllerPort;
 
-  if (Settings.Protocol == 9999)
+  byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+  if (Protocol[ProtocolIndex].usesAccount)
   {
     reply += F("'><TR><TD>Controller User:<TD><input type='text' name='controlleruser' value='");
     reply += SecuritySettings.ControllerUser;
   }
 
-  byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
   if (Protocol[ProtocolIndex].usesPassword)
   {
     reply += F("'><TR><TD>Controller Password:<TD><input type='text' name='controllerpassword' value='");
@@ -544,19 +513,9 @@ void handle_devices() {
         urlDecode(tmpString);
         strcpy(ExtraTaskSettings.TaskDeviceValueNames[varNr], tmpString);
       }
-
-#ifdef ESP_EASY
       TempEvent.TaskIndex = index - 1;
       PluginCall(PLUGIN_WEBFORM_SAVE, &TempEvent, dummyString);
       PluginCall(PLUGIN_INIT, &TempEvent, dummyString);
-#endif
-#ifdef ESP_CONNEXIO
-      struct NodoEventStruct TempEvent;
-      TempEvent.Par1 = index - 1;
-      PluginCall(PLUGIN_WEBFORM_SAVE, &TempEvent, 0);
-      PluginCall(PLUGIN_INIT, &TempEvent, 0);
-      createEventlist();
-#endif
     }
     SaveTaskSettings(index - 1);
     SaveSettings();
@@ -650,19 +609,7 @@ void handle_devices() {
 
     reply += F("<TD>");
     byte customValues = false;
-#ifdef ESP_EASY
     customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, reply);
-#endif
-#ifdef ESP_CONNEXIO
-    struct NodoEventStruct TempEvent;
-    char tmpString[256];
-    tmpString[0] = 0;
-    TempEvent.Par1 = x;
-    customValues = PluginCall(PLUGIN_WEBFORM_VALUES, &TempEvent, tmpString);
-    if (tmpString[0] != 0)
-      reply += tmpString;
-#endif
-
     if (!customValues)
     {
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
@@ -749,19 +696,8 @@ void handle_devices() {
         }
       }
       
-#ifdef ESP_EASY
-        PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, reply);
-#endif
+      PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, reply);
 
-#ifdef ESP_CONNEXIO
-        struct NodoEventStruct TempEvent;
-        char tmpString[256];
-        tmpString[0] = 0;
-        TempEvent.Par1 = index - 1;
-        PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, tmpString);
-        if (tmpString[0] != 0)
-          reply += tmpString;
-#endif
       if (!Device[DeviceIndex].Custom)
       {
         reply += F("<TR><TH>Optional Settings<TH>Value");
@@ -1045,76 +981,6 @@ void addTaskValueSelect(String& str, String name,  int choice, byte TaskIndex)
 }
 
 
-#ifdef ESP_CONNEXIO
-//********************************************************************************
-// Web Interface eventlist page
-//********************************************************************************
-void handle_eventlist() {
-  if (!isLoggedIn()) return;
-
-  char *TempString = (char*)malloc(80);
-  String reply = "";
-  addMenu(reply);
-
-  reply += F("<table><TH>Eventlist<td><TR><TD>");
-
-  if (WebServer.args() == 1)
-  {
-
-    struct NodoEventStruct TempEvent;
-    ClearEvent(&TempEvent);
-    byte x = 1;
-    while (Eventlist_Write(x++, 0, &TempEvent, &TempEvent)) delay(1);
-
-    String eventlist = WebServer.arg("eventlist");
-    eventlist.replace("%0D%0A", "\n");
-    int NewLineIndex = eventlist.indexOf('\n');
-    byte limit = 0;
-    byte messagecode = 0;
-    while ((NewLineIndex > 0) && (limit < EventlistMax))
-    {
-      limit++;
-      String line = eventlist.substring(0, NewLineIndex);
-      String strCommand = F("eventlistwrite 0,");
-      strCommand += line;
-      strCommand.toCharArray(TempString, 80);
-      urlDecode(TempString);
-
-      messagecode = ExecuteLine(TempString, VALUE_SOURCE_SERIAL);
-      if (messagecode > 0)
-      {
-        reply += TempString;
-        reply += " : ";
-        reply += MessageText_tabel[messagecode];
-        reply += "<BR>";
-      }
-      eventlist = eventlist.substring(NewLineIndex + 1);
-      NewLineIndex = eventlist.indexOf('\n');
-    }
-    EEPROM.commit();
-  }
-
-  reply += F("<form method='post'>");
-  reply += F("<TD><textarea name='eventlist' rows='15' cols='80' wrap='on'>");
-  byte x = 1;
-  while (EventlistEntry2str(x++, 0, TempString, false))
-    if (TempString[0] != 0)
-    {
-      reply += TempString;
-      reply += '\n';
-    }
-
-  reply += F("</textarea>");
-
-  reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'>");
-  reply += F("</table></form>");
-  addFooter(reply);
-  WebServer.send(200, "text/html", reply);
-  free(TempString);
-}
-#endif
-
-
 //********************************************************************************
 // Web Interface log page
 //********************************************************************************
@@ -1192,12 +1058,7 @@ void handle_tools() {
 
   printToWeb = true;
   printWebString = "<BR>";
-#ifdef ESP_CONNEXIO
-  ExecuteLine(command, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
   ExecuteCommand(command);
-#endif
   reply += printWebString;
   reply += F("</table></form>");
   addFooter(reply);
@@ -1245,6 +1106,9 @@ void handle_i2cscanner() {
           break;
         case 0x39:
           reply += F("TLS2561 Lux Sensor");
+          break;
+        case 0x3C:
+          reply += F("OLED SSD1306 Display");
           break;
         case 0x40:
           reply += F("SI7021 Temp/Hum Sensor");
@@ -1523,38 +1387,45 @@ boolean isLoggedIn()
 //********************************************************************************
 // Decode special characters in URL of get/post data
 //********************************************************************************
-void urlDecode(char *src)
+String urlDecode(const char *src)
 {
-  char* dst = src;
+  String rString;
+  const char* dst = src;
   char a, b;
+
   while (*src) {
 
     if (*src == '+')
-      *src = ' ';
-
-    if ((*src == '%') &&
-        ((a = src[1]) && (b = src[2])) &&
-        (isxdigit(a) && isxdigit(b))) {
-      if (a >= 'a')
-        a -= 'a' - 'A';
-      if (a >= 'A')
-        a -= ('A' - 10);
-      else
-        a -= '0';
-      if (b >= 'a')
-        b -= 'a' - 'A';
-      if (b >= 'A')
-        b -= ('A' - 10);
-      else
-        b -= '0';
-      *dst++ = 16 * a + b;
-      src += 3;
+    {
+      rString += ' ';
+      src++;
     }
-    else {
-      *dst++ = *src++;
+    else
+    {
+      if ((*src == '%') &&
+          ((a = src[1]) && (b = src[2])) &&
+          (isxdigit(a) && isxdigit(b))) {
+        if (a >= 'a')
+          a -= 'a' - 'A';
+        if (a >= 'A')
+          a -= ('A' - 10);
+        else
+          a -= '0';
+        if (b >= 'a')
+          b -= 'a' - 'A';
+        if (b >= 'A')
+          b -= ('A' - 10);
+        else
+          b -= '0';
+        rString += (char)(16 * a + b);
+        src += 3;
+      }
+      else {
+        rString += *src++;
+      }
     }
   }
-  *dst++ = '\0';
+  return rString;
 }
 
 #if FEATURE_SPIFFS

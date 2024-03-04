@@ -1,3 +1,22 @@
+// R49 08-12-2015
+// Changes to urldecode and WPAKey handling (contributed by ixtrader)
+// Added MQTT authentication (contributed by Chrille)
+// Changing protocol sets default TCP port
+
+// R48 01-12-2015
+// Code cleanup, candidate for Arduino ESP Core 2.0.0.
+
+// R47 29-11-2015
+// Support for using http commands to control OLED en LCD displays
+
+// R46 28-11-2015
+// Added Wiki help button to Protocol dropdown
+// Added basic text message support for I2C OLED SSD1306 display
+
+// R45 22-11-2015
+// Bugfix: PCA9685 plugin needs to be listed in the dropdown list
+//   else counting/sorting will have issues. But it currently has no real purpose
+
 // R44 22-11-2015
 // Added basic support for PCA9685, simple pwm output using control web page
 
@@ -22,10 +41,10 @@
 // Added support for IR signal reception (needs a third party library!)
 
 // R38 13-10-2015
-// Added support for I2C TSL2561 Luminosity Sensor
+// Added support for I2C TSL2561 Luminosity Sensor (contributed by Hallard)
 
 // R37 12-10-2015
-// Added support for I2C SI7021 Temperature Humidity sensor
+// Added support for I2C SI7021 Temperature Humidity sensor (contributed by Hallard)
 
 // R36 11-10-2015
 // Added support to control (max 2) Servo motors using http control commands

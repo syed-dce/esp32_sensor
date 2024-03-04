@@ -25,29 +25,34 @@
 *
 *************************************************************************************************************************/
 
-// Simple Arduino sketch for ESP module, supporting:
+//   Simple Arduino sketch for ESP module, supporting:
+//   =================================================================================
+//   Simple switch inputs and direct GPIO output control to drive relais, mosfets, etc
+//   Analog input (ESP-7/12 only)
+//   Pulse counters
 //   Dallas OneWire DS18b20 temperature sensors
 //   DHT11/22 humidity sensors
+//   BMP085 I2C Barometric Pressure sensor
+//   PCF8591 4 port Analog to Digital converter (I2C)
+//   RFID Wiegand-26 reader
+//   MCP23017 I2C IO Expanders
+//   BH1750 I2C Luminosity sensor
+//   Arduino Pro Mini with IO extender sketch, connected through I2C
+//   LCD I2C display 4x20 chars
+//   HC-SR04 Ultrasonic distance sensor
 //   SI7021 I2C temperature/humidity sensors
 //   TSL2561 I2C Luminosity sensor
-//   BH1750 I2C Luminosity sensor
-//   BMP085 I2C Barometric Pressure sensor
-//   RFID Wiegand-26 reader
-//   PN532 RFID reader
-//   MCP23017 I2C IO Expanders
-//   PCF8574 I2C IO Expanders
-//   Analog input (ESP-7/12 only)
-//   PCF8591 4 port Analog to Digital converter (I2C)
-//   HC-SR04 Ultrasonic distance sensor
 //   TSOP4838 IR receiver
+//   PN532 RFID reader
 //   Sharp GP2Y10 dust sensor
-//   LCD I2C display 4x20 chars
-//   Pulse counters
-//   Simple switch inputs
-//   Direct GPIO output control to drive relais, mosfets, etc
-//   Arduino Pro Mini with IO extender sketch, connected through I2C
-//   Ser2Net server
+//   PCF8574 I2C IO Expanders
+//   OLED I2C display with SSD1306 driver
 
+//   Experimental/Preliminary:
+//   =========================
+//   Ser2Net server
+//   Local Level Control to GPIO
+//   PCA9685 16 channel I2C PWM driver
 
 // ********************************************************************************
 //   User specific configuration
@@ -80,7 +85,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              44
+#define BUILD                              49
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -266,6 +271,7 @@ struct ProtocolStruct
   boolean usesAccount;
   boolean usesPassword;
   char Name[20];
+  int defaultPort;
 } Protocol[CPLUGIN_MAX];
 
 int deviceCount = -1;
@@ -558,9 +564,7 @@ void SensorSend()
             String svalue = String(value);
             formula.replace("%pvalue%", spreValue);
             formula.replace("%value%", svalue);
-            char TmpStr[26];
-            formula.toCharArray(TmpStr, 25);
-            byte error = Calculate(TmpStr, &result);
+            byte error = Calculate(formula.c_str(), &result);
             if (error == 0)
               UserVar[varIndex + varNr] = result;
           }
