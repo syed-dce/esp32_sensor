@@ -1,16 +1,16 @@
 //#######################################################################################################
-//#################################### Plugin 025: ADS1115 Dust  I2C 0x48)  ###############################################
+//#################################### Plugin 025: ADS1115 I2C 0x48)  ###############################################
 //#######################################################################################################
 
-// MyMessage *msgDust025; // Mysensors
+// MyMessage *msgAnalog025; // Mysensors
 
 #define PLUGIN_025
 #define PLUGIN_ID_025 25
-#define PLUGIN_NAME_025 "Analog input - ADS1115 Dust"
+#define PLUGIN_NAME_025 "Analog input - ADS1115"
 #define PLUGIN_VALUENAME1_025 "Analog"
 
 boolean Plugin_025_init = false;
-byte Plugin_Switch_Pin = 0;
+// byte Plugin_Switch_Pin = 0;
 
 static uint16_t readRegister025(uint8_t i2cAddress, uint8_t reg) {
   Wire.beginTransmission(i2cAddress);
@@ -29,14 +29,15 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
     case PLUGIN_DEVICE_ADD:
       {
         Device[++deviceCount].Number = PLUGIN_ID_025;
-//        Device[deviceCount].Type = DEVICE_TYPE_I2C;
-        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+//        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
         Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
         Device[deviceCount].Ports = 4;
         Device[deviceCount].PullUpOption = false;
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 
@@ -102,17 +103,17 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
     case PLUGIN_INIT:
       {
         Plugin_025_init = true;
-        Plugin_Switch_Pin = Settings.TaskDevicePin1[event->TaskIndex];
-//        if (!msgDust025)  //Mysensors
+//        Plugin_Switch_Pin = Settings.TaskDevicePin1[event->TaskIndex];
+//        if (!msgAnalog025)  //Mysensors
 //          msgDust025 = new MyMessage(event->BaseVarIndex, V_LEVEL); //Mysensors
 //        present(event->BaseVarIndex, S_DUST); //Mysensors
-//        Serial.print("Present ADS1115 Dust: "); // Mysensors
+//        Serial.print("Present ADS1115: "); // Mysensors
 //        Serial.println(event->BaseVarIndex); // Mysensors
-        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
-        {
-            pinMode(Plugin_Switch_Pin, OUTPUT);
-            digitalWrite(Plugin_Switch_Pin, HIGH);
-        }
+//        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
+//        {
+//            pinMode(Plugin_Switch_Pin, OUTPUT);
+//            digitalWrite(Plugin_Switch_Pin, HIGH);
+//        }
         success = true;
         break;
       }
@@ -120,15 +121,15 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
     case PLUGIN_READ:
       {
         uint8_t m_gain = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
-        noInterrupts();
+//        noInterrupts();
         int value;
         value = 0;
-        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
-        {
-          Plugin_Switch_Pin = Settings.TaskDevicePin1[event->TaskIndex];
-          digitalWrite(Plugin_Switch_Pin, LOW);
-          delayMicroseconds(280);
-        }
+//        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
+//        {
+//          Plugin_Switch_Pin = Settings.TaskDevicePin1[event->TaskIndex];
+//          digitalWrite(Plugin_Switch_Pin, LOW);
+//          delayMicroseconds(280);
+//        }
         byte unit = (Settings.TaskDevicePort[event->TaskIndex] - 1) / 4;
         byte port = Settings.TaskDevicePort[event->TaskIndex] - (unit * 4);
         uint8_t address = 0x48 + unit;
@@ -198,12 +199,12 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
 //        send(msgDust025->set(UserVar[event->BaseVarIndex], 1));  // Mysensors
         addLog(LOG_LEVEL_INFO,log);
         success = true;
-        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
-        {
-          delayMicroseconds(40);
-          digitalWrite(Plugin_Switch_Pin, HIGH);
-        }
-        interrupts();
+//        if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
+//        {
+//          delayMicroseconds(40);
+//          digitalWrite(Plugin_Switch_Pin, HIGH);
+//        }
+//        interrupts();
         break;
       }
   }

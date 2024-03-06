@@ -4,7 +4,7 @@
 
 #define PLUGIN_008
 #define PLUGIN_ID_008         8
-#define PLUGIN_NAME_008       "RFID Reader"
+#define PLUGIN_NAME_008       "RFID Reader - Wiegand"
 #define PLUGIN_VALUENAME1_008 "Tag"
 
 #define PLUGIN_008_WGSIZE 26
@@ -32,6 +32,7 @@ boolean Plugin_008(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = false;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 

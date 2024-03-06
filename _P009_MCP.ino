@@ -4,7 +4,7 @@
 
 #define PLUGIN_009
 #define PLUGIN_ID_009         9
-#define PLUGIN_NAME_009       "MCP23017 input"
+#define PLUGIN_NAME_009       "Switch input - MCP23017"
 #define PLUGIN_VALUENAME1_009 "Switch"
 
 boolean Plugin_009(byte function, struct EventStruct *event, String& string)
@@ -25,6 +25,7 @@ boolean Plugin_009(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = false;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 
@@ -87,6 +88,24 @@ boolean Plugin_009(byte function, struct EventStruct *event, String& string)
             printWebString += F(" Set to ");
             printWebString += event->Par2;
             printWebString += F("<BR>");
+          }
+        }
+		if (tmpString.equalsIgnoreCase("MCPGPIOPulse"))
+        {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= 1023)
+          {
+            Plugin_009_Write(event->Par1, event->Par2);
+            delay(event->Par3);
+            Plugin_009_Write(event->Par1, !event->Par2);
+            if (printToWeb)
+            {
+              printWebString += F("MCPGPIO ");
+              printWebString += event->Par1;
+              printWebString += F(" Pulsed for ");
+              printWebString += event->Par3;
+              printWebString += F(" mS<BR>");
+            }
           }
         }
         break;

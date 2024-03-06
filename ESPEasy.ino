@@ -25,21 +25,34 @@
 *
 *************************************************************************************************************************/
 
-// Simple Arduino sketch for ESP module, supporting:
+//   Simple Arduino sketch for ESP module, supporting:
+//   =================================================================================
+//   Simple switch inputs and direct GPIO output control to drive relais, mosfets, etc
+//   Analog input (ESP-7/12 only)
+//   Pulse counters
 //   Dallas OneWire DS18b20 temperature sensors
 //   DHT11/22 humidity sensors
-//   BH1750 I2C Lux sensor
 //   BMP085 I2C Barometric Pressure sensor
+//   PCF8591 4 port Analog to Digital converter (I2C)
 //   RFID Wiegand-26 reader
 //   MCP23017 I2C IO Expanders
-//   Analog input (ESP-7/12 only)
-//   PCF8591 4 port Analog to Digital converter (I2C)
-//   HC-SR04 Ultrasonic distance sensor
-//   LCD I2C display 4x20 chars
-//   Pulse counters
-//   Simple switch inputs
-//   Direct GPIO output control to drive relais, mosfets, etc
+//   BH1750 I2C Luminosity sensor
 //   Arduino Pro Mini with IO extender sketch, connected through I2C
+//   LCD I2C display 4x20 chars
+//   HC-SR04 Ultrasonic distance sensor
+//   SI7021 I2C temperature/humidity sensors
+//   TSL2561 I2C Luminosity sensor
+//   TSOP4838 IR receiver
+//   PN532 RFID reader
+//   Sharp GP2Y10 dust sensor
+//   PCF8574 I2C IO Expanders
+//   OLED I2C display with SSD1306 driver
+
+//   Experimental/Preliminary:
+//   =========================
+//   Ser2Net server
+//   Local Level Control to GPIO
+//   PCA9685 16 channel I2C PWM driver
 
 // ********************************************************************************
 //   User specific configuration
@@ -66,13 +79,15 @@
 //   7 = EmonCMS
 #define UNIT                0
 
+#define FEATURE_TIME                     true
+
 // ********************************************************************************
 //   DO NOT CHANGE ANYTHING BELOW THIS LINE
 // ********************************************************************************
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              40
+#define BUILD                              64
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -94,8 +109,11 @@
 #define VARS_PER_TASK                       4
 #define PLUGIN_MAX                         64
 #define PLUGIN_CONFIGVAR_MAX                8
+#define PLUGIN_CONFIGFLOATVAR_MAX           4
+#define PLUGIN_CONFIGLONGVAR_MAX            4
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
 #define CPLUGIN_MAX                        16
+#define UNIT_MAX                           32
 
 #define DEVICE_TYPE_SINGLE                  1  // connected through 1 datapin
 #define DEVICE_TYPE_I2C                     2  // connected through I2C
@@ -124,18 +142,31 @@
 #define PLUGIN_WRITE                       13
 #define PLUGIN_EVENT_OUT                   14
 #define PLUGIN_WEBFORM_SHOW_CONFIG         15
+#define PLUGIN_SERIAL_IN                   16
+#define PLUGIN_UDP_IN                      17
+#define PLUGIN_CLOCK_IN                    18
+
+#define BOOT_CAUSE_MANUAL_REBOOT            0
+#define BOOT_CAUSE_COLD_BOOT                1
+#define BOOT_CAUSE_EXT_WD                  10
 
 #include <ESP8266WiFi.h>
+#include <DNSServer.h>
 #include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <Wire.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
-#include <Servo.h> 
+#include <Servo.h>
 #if FEATURE_SPIFFS
 #include <FS.h>
 #endif
+
+// Setup DNS, only used if the ESP has no valid WiFi config
+const byte DNS_PORT = 53;
+IPAddress apIP(192, 168, 4, 1);
+DNSServer dnsServer;
 
 Servo myservo1;
 Servo myservo2;
@@ -143,15 +174,11 @@ Servo myservo2;
 // MQTT client
 PubSubClient MQTTclient("");
 
-// LCD
-LiquidCrystal_I2C lcd(0x27, 20, 4); // set the LCD address to 0x27 for a 16 chars and 2 line display
-
 // WebServer
 ESP8266WebServer WebServer(80);
 
 // syslog stuff
-WiFiUDP portRX;
-WiFiUDP portTX;
+WiFiUDP portUDP;
 
 struct SecurityStruct
 {
@@ -171,7 +198,7 @@ struct SettingsStruct
   byte          Controller_IP[4];
   unsigned int  ControllerPort;
   byte          IP_Octet;
-  char          _obsolete[64];
+  char          NTPHost[64];
   unsigned long Delay;
   int8_t        Pin_i2c_sda;
   int8_t        Pin_i2c_scl;
@@ -199,6 +226,20 @@ struct SettingsStruct
   char          MQTTpublish[81];
   char          MQTTsubscribe[81];
   boolean       CustomCSS;
+  float         TaskDevicePluginConfigFloat[TASKS_MAX][PLUGIN_CONFIGFLOATVAR_MAX];
+  long          TaskDevicePluginConfigLong[TASKS_MAX][PLUGIN_CONFIGLONGVAR_MAX];
+  boolean       TaskDeviceSendData[TASKS_MAX];
+  int16_t       Build;
+  byte          DNS[4];
+  int8_t        TimeZone;
+  char          ControllerHostName[64];
+  boolean       UseNTP;
+  boolean       DST;
+  byte          WDI2CAddress;
+  boolean       TaskDeviceGlobalSync[TASKS_MAX];
+  int8_t        TaskDevicePin3[TASKS_MAX];
+  byte          TaskDeviceDataFeed[TASKS_MAX];
+  int8_t        PinStates[17];
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -207,7 +248,7 @@ struct ExtraTaskSettingsStruct
   char    TaskDeviceName[26];
   char    TaskDeviceFormula[VARS_PER_TASK][41];
   char    TaskDeviceValueNames[VARS_PER_TASK][26];
-  long    TaskDevicePluginConfig[PLUGIN_EXTRACONFIGVAR_MAX];
+  long    TaskDevicePluginConfigLong[PLUGIN_EXTRACONFIGVAR_MAX];
 } ExtraTaskSettings;
 
 struct EventStruct
@@ -222,6 +263,7 @@ struct EventStruct
   byte OriginTaskIndex;
   String String1;
   String String2;
+  byte *Data;
 };
 
 struct LogStruct
@@ -241,6 +283,9 @@ struct DeviceStruct
   boolean InverseLogicOption;
   boolean FormulaOption;
   byte ValueCount;
+  boolean Custom;
+  boolean SendDataOption;
+  boolean GlobalSyncOption;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
 struct ProtocolStruct
@@ -250,6 +295,7 @@ struct ProtocolStruct
   boolean usesAccount;
   boolean usesPassword;
   char Name[20];
+  int defaultPort;
 } Protocol[CPLUGIN_MAX];
 
 int deviceCount = -1;
@@ -264,6 +310,7 @@ unsigned long timer;
 unsigned long timer100ms;
 unsigned long timer1s;
 unsigned long timerwd;
+unsigned long lastSend;
 unsigned int NC_Count = 0;
 unsigned int C_Count = 0;
 boolean AP_Mode = false;
@@ -283,6 +330,10 @@ byte CPlugin_id[PLUGIN_MAX];
 String dummyString = "";
 
 boolean systemOK = false;
+byte lastBootCause = 0;
+
+boolean wifiSetup = false;
+boolean wifiSetupConnect = false;
 
 /*********************************************************************************************\
  * SETUP
@@ -298,6 +349,9 @@ void setup()
   emergencyReset();
 
   LoadSettings();
+  if (strcasecmp(SecuritySettings.WifiSSID, "ssid") == 0)
+    wifiSetup = true;
+  
   ExtraTaskSettings.TaskIndex = 255; // make sure this is an unused nr to prevent cache load on boot
 
   // if different version, eeprom settings structure has changed. Full Reset needed
@@ -321,6 +375,10 @@ void setup()
   if (systemOK)
   {
     Serial.begin(Settings.BaudRate);
+
+    if (Settings.Build != BUILD)
+      BuildFixes();
+
     String log = F("\nINIT : Booting Build nr:");
     log += BUILD;
     addLog(LOG_LEVEL_INFO, log);
@@ -328,6 +386,7 @@ void setup()
     if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
       Serial.setDebugOutput(true);
 
+    WiFi.persistent(false); // Do not use SDK storage of SSID/WPA parameters
     WifiAPconfig();
     WifiConnect();
 
@@ -339,12 +398,7 @@ void setup()
 
     // setup UDP
     if (Settings.UDPPort != 0)
-      portRX.begin(Settings.UDPPort);
-
-    // Setup LCD display
-    lcd.init();                      // initialize the lcd
-    lcd.backlight();
-    lcd.print("ESP ");
+      portUDP.begin(Settings.UDPPort);
 
     // Setup MQTT Client
     byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
@@ -371,8 +425,13 @@ void setup()
         log = F("INIT : Normal boot");
     }
     else
-      log = F("INIT : RTC not read");
-
+    {
+      // cold boot situation
+      if (lastBootCause == 0) // only set this if not set earlier during boot stage.
+        lastBootCause = BOOT_CAUSE_COLD_BOOT;
+      log = F("INIT : Cold Boot");
+    }
+    
     addLog(LOG_LEVEL_INFO, log);
 
     saveToRTC(0);
@@ -386,6 +445,18 @@ void setup()
     timer100ms = millis() + 100; // timer for periodic actions 10 x per/sec
     timer1s = millis() + 1000; // timer for periodic actions once per/sec
     timerwd = millis() + 30000; // timer for watchdog once per 30 sec
+
+#if FEATURE_TIME
+    if (Settings.UseNTP)
+      initTime();
+#endif
+
+  // Start DNS, only used if the ESP has no valid WiFi config
+  // It will reply with it's own address on all DNS requests
+  // (captive portal concept)
+  if(wifiSetup)
+    dnsServer.start(DNS_PORT, "*", apIP);
+  
   }
   else
   {
@@ -394,13 +465,26 @@ void setup()
 }
 
 
+unsigned long start = 0;
+unsigned long elapsed = 0;
+
 /*********************************************************************************************\
  * MAIN LOOP
 \*********************************************************************************************/
 void loop()
 {
+  if (wifiSetupConnect)
+  {
+    // try to connect for setup wizard
+    WifiConnect();
+    wifiSetupConnect = false;
+  }
+  
   if (Serial.available())
-    serial();
+  {
+    if (!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString))
+      serial();
+  }
 
   if (systemOK)
   {
@@ -443,14 +527,24 @@ void loop()
     // Perform regular checks, 10 times/sec
     if (millis() > timer100ms)
     {
+      start = micros();
       timer100ms = millis() + 100;
       PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
+      elapsed = micros() - start;
     }
 
     // Perform regular checks, 1 time/sec
     if (millis() > timer1s)
     {
+#if FEATURE_TIME
+      // clock events
+      if (Settings.UseNTP)
+        checkTime();
+#endif
+      unsigned long timer = micros();
       PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
+        
+      timer = micros() - timer;
 
       timer1s = millis() + 1000;
       WifiCheck();
@@ -461,6 +555,23 @@ void loop()
           WebLoggedInTimer++;
         if (WebLoggedInTimer > 300)
           WebLoggedIn = false;
+      }
+
+      // I2C Watchdog feed
+      if (Settings.WDI2CAddress != 0)
+      {
+        Wire.beginTransmission(Settings.WDI2CAddress);
+        Wire.write(0xA5);
+        Wire.endTransmission();
+      }
+
+      if (Settings.SerialLogLevel == 5)
+      {
+        Serial.print("10 ps:");
+        Serial.print(elapsed);
+        Serial.print(" uS  1 ps:");
+        Serial.print(timer);
+        Serial.println(" uS");
       }
     }
 
@@ -492,7 +603,7 @@ void SensorSend()
 {
   for (byte x = 0; x < TASKS_MAX; x++)
   {
-    if (Settings.TaskDeviceID[x] != 0)
+    if (Settings.TaskDeviceDataFeed[x] == 0 && Settings.TaskDeviceID[x] != 0)
     {
       byte varIndex = x * VARS_PER_TASK;
       boolean success = false;
@@ -524,9 +635,7 @@ void SensorSend()
             String svalue = String(value);
             formula.replace("%pvalue%", spreValue);
             formula.replace("%value%", svalue);
-            char TmpStr[26];
-            formula.toCharArray(TmpStr, 25);
-            byte error = Calculate(TmpStr, &result);
+            byte error = Calculate(formula.c_str(), &result);
             if (error == 0)
               UserVar[varIndex + varNr] = result;
           }
@@ -539,8 +648,12 @@ void SensorSend()
 
 void backgroundtasks()
 {
+  // process DNS, only used if the ESP has no valid WiFi config
+  if(wifiSetup)
+    dnsServer.processNextRequest();
+    
   WebServer.handleClient();
   MQTTclient.loop();
-  delay(10);
+  yield();
 }
 

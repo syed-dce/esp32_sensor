@@ -4,7 +4,7 @@
 
 #define PLUGIN_013
 #define PLUGIN_ID_013        13
-#define PLUGIN_NAME_013       "Ultrasonic Sensor HC-SR04"
+#define PLUGIN_NAME_013       "Ultrasonic Sensor - HC-SR04"
 #define PLUGIN_VALUENAME1_013 "Distance"
 
 boolean Plugin_013_init = false;
@@ -30,6 +30,7 @@ boolean Plugin_013(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = false;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 
@@ -71,7 +72,7 @@ boolean Plugin_013(byte function, struct EventStruct *event, String& string)
 
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == 2)
         {
-          char tmpString[80];
+          char tmpString[128];
           sprintf_P(tmpString, PSTR("<TR><TD>Threshold:<TD><input type='text' name='plugin_013_threshold' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
           string += tmpString;
         }

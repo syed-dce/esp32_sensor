@@ -2,19 +2,17 @@
 //#################################### Plugin 024: MLX90614 IR temperature I2C 0x5A)  ###############################################
 //#######################################################################################################
 
-// MyMessage *msgObjTemp024; // Mysensors
+// MyMessage *msgTemp024; // Mysensors
 
 #define PLUGIN_024
 #define PLUGIN_ID_024 24
-#define PLUGIN_NAME_024 "IR temperature - MLX90614"
+#define PLUGIN_NAME_024 "Temperature IR + ambient - MLX90614"
 #define PLUGIN_VALUENAME1_024 "Temperature"
 
 boolean Plugin_024_init = false;
 
-uint16_t readRegister024(uint8_t i2cAddress) {
+uint16_t readRegister024(uint8_t i2cAddress, uint8_t reg) {
   uint16_t ret;
-  uint8_t reg;
-  reg = 0x07;
   Wire.beginTransmission(i2cAddress);
   Wire.write(reg);
   Wire.endTransmission(false);
@@ -25,10 +23,10 @@ uint16_t readRegister024(uint8_t i2cAddress) {
   return ret;  
 }
 
-float readTemp024(uint8_t i2c_addr)
+float readTemp024(uint8_t i2c_addr, uint8_t i2c_reg)
 {
   float temp;
-  temp = readRegister024(i2c_addr);
+  temp = readRegister024(i2c_addr, i2c_reg);
   temp *= .02;
   temp -= 273.15;
   return temp;
@@ -49,6 +47,7 @@ boolean Plugin_024(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].PullUpOption = false;
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].SendDataOption = true;
         Device[deviceCount].ValueCount = 1;
         break;
       }
@@ -65,11 +64,49 @@ boolean Plugin_024(byte function, struct EventStruct *event, String& string)
         break;
       }
 
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        #define MLX90614_OPTION 2
+
+        byte choice = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
+        String options[MLX90614_OPTION];
+        uint optionValues[MLX90614_OPTION];
+        optionValues[0] = (0x07);
+        options[0] = F("IR object temperature");
+        optionValues[1] = (0x06);
+        options[1] = F("Ambient temperature");
+        string += F("<TR><TD>Option:<TD><select name='plugin_024_option'>");
+        for (byte x = 0; x < MLX90614_OPTION; x++)
+        {
+          string += F("<option value='");
+          string += optionValues[x];
+          string += "'";
+          if (choice == optionValues[x])
+            string += F(" selected");
+          string += ">";
+          string += options[x];
+          string += F("</option>");
+        }
+        string += F("</select>");
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        String plugin1 = WebServer.arg("plugin_024_option");
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin1.toInt();
+        Plugin_024_init = false; // Force device setup next time
+        success = true;
+        break;
+      }
+
     case PLUGIN_INIT:
       {
         Plugin_024_init = true;
-//        if (!msgObjTemp024) // Mysensors
-//          msgObjTemp024 = new MyMessage(event->BaseVarIndex, V_TEMP); //Mysensors
+//        if (!msgTemp024) // Mysensors
+//          msgTemp024 = new MyMessage(event->BaseVarIndex, V_TEMP); //Mysensors
 //        present(event->BaseVarIndex, S_TEMP); //Mysensors
 //        Serial.print("Present MLX90614: "); //Mysensors
 //        Serial.println(event->BaseVarIndex); //Mysensors
@@ -84,7 +121,7 @@ boolean Plugin_024(byte function, struct EventStruct *event, String& string)
         value = 0;
         byte unit = Settings.TaskDevicePort[event->TaskIndex];
         uint8_t address = 0x5A + unit;
-        UserVar[event->BaseVarIndex] = (float) readTemp024(address);
+        UserVar[event->BaseVarIndex] = (float) readTemp024(address, Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
         String log = F("MLX90614  : Temperature: ");
         log += UserVar[event->BaseVarIndex];
 //        send(msgObjTemp024->set(UserVar[event->BaseVarIndex], 1)); // Mysensors

@@ -8,7 +8,7 @@ decode_results results;
 
 #define PLUGIN_016
 #define PLUGIN_ID_016         16
-#define PLUGIN_NAME_016       "IR input"
+#define PLUGIN_NAME_016       "Infrared input - TSOP4838"
 #define PLUGIN_VALUENAME1_016 "IR"
 
 boolean Plugin_016(byte function, struct EventStruct *event, String& string)
@@ -27,6 +27,7 @@ boolean Plugin_016(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = true;
         Device[deviceCount].FormulaOption = false;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 

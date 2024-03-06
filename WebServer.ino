@@ -8,9 +8,6 @@ void WebServerInit()
   WebServer.on("/config", handle_config);
   WebServer.on("/hardware", handle_hardware);
   WebServer.on("/devices", handle_devices);
-#ifdef ESP_CONNEXIO
-  WebServer.on("/eventlist", handle_eventlist);
-#endif
   WebServer.on("/log", handle_log);
   WebServer.on("/tools", handle_tools);
   WebServer.on("/i2cscanner", handle_i2cscanner);
@@ -20,13 +17,15 @@ void WebServerInit()
   WebServer.on("/download", handle_download);
   WebServer.on("/upload", handle_upload);
   WebServer.onFileUpload(handleFileUpload);
+  WebServer.onNotFound(handleNotFound);
 #if FEATURE_SPIFFS
   WebServer.on("/filelist", handle_filelist);
-  WebServer.onNotFound(handleNotFound);
 #else
   WebServer.on("/esp.css", handle_css);
 #endif
   WebServer.on("/advanced", handle_advanced);
+  WebServer.on("/setup", handle_setup);
+  WebServer.on("/json", handle_json);
   WebServer.begin();
 }
 
@@ -34,7 +33,7 @@ void WebServerInit()
 //********************************************************************************
 // Add top menu
 //********************************************************************************
-void addMenu(String& str)
+void addHeader(boolean showMenu, String& str)
 {
   boolean cssfile = false;
 
@@ -80,13 +79,7 @@ void addMenu(String& str)
 
   str += F("</head>");
 
-  str += F("<h1>Welcome to ESP ");
-#ifdef ESP_CONNEXIO
-  str += F("Connexio : ");
-#endif
-#ifdef ESP_EASY
-  str += F("Easy : ");
-#endif
+  str += F("<h1>Welcome");
   str += Settings.Name;
 
 #if FEATURE_SPIFFS
@@ -98,14 +91,16 @@ void addMenu(String& str)
   }
 #endif
 
-  str += F("</h1><BR><a class=\"button-menu\" href=\".\">Main</a>");
-  str += F("<a class=\"button-menu\" href=\"config\">Config</a>");
-  str += F("<a class=\"button-menu\" href=\"hardware\">Hardware</a>");
-  str += F("<a class=\"button-menu\" href=\"devices\">Devices</a>");
-#ifdef ESP_CONNEXIO
-  str += F("<a class=\"button-menu\" href=\"eventlist\">Eventlist</a>");
-#endif
-  str += F("<a class=\"button-menu\" href=\"tools\">Tools</a><BR><BR>");
+  str += F("</h1>");
+
+  if (showMenu)
+  {
+    str += F("<BR><a class=\"button-menu\" href=\".\">Main</a>");
+    str += F("<a class=\"button-menu\" href=\"config\">Config</a>");
+    str += F("<a class=\"button-menu\" href=\"hardware\">Hardware</a>");
+    str += F("<a class=\"button-menu\" href=\"devices\">Devices</a>");
+    str += F("<a class=\"button-menu\" href=\"tools\">Tools</a><BR><BR>");
+  }
 }
 
 
@@ -122,37 +117,49 @@ void addFooter(String& str)
 // Web Interface root page
 //********************************************************************************
 void handle_root() {
+
+  // if Wifi setup, launch setup wizard
+  if (wifiSetup)
+  {
+    WebServer.send(200, "text/html", "<meta HTTP-EQUIV='REFRESH' content='0; url=http://192.168.4.1/setup'>");
+    //WebServer.send(200, "text/html", "<a class=\"button-menu\" href=\"setup\">Setup</a>");
+    return;
+  }
+
   if (!isLoggedIn()) return;
 
   int freeMem = ESP.getFreeHeap();
-  String webrequest = WebServer.arg("cmd");
-  char command[80];
-  command[0] = 0;
-  webrequest.toCharArray(command, 80);
-  urlDecode(command);
+  String sCommand = WebServer.arg("cmd");
 
-  if ((strcasecmp_P(command, PSTR("wifidisconnect")) != 0) && (strcasecmp_P(command, PSTR("reboot")) != 0))
+  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0))
   {
     String reply = "";
-    addMenu(reply);
+    addHeader(true, reply);
 
     printToWeb = true;
     printWebString = "";
-#ifdef ESP_CONNEXIO
-    ExecuteLine(command, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
-    ExecuteCommand(command);
-#endif
-
-    reply += printWebString;
-    reply += F("<form>");
-    reply += F("<table><TH>System Info<TH><TH><TR><TD>");
+    ExecuteCommand(sCommand.c_str());
 
     IPAddress ip = WiFi.localIP();
     IPAddress gw = WiFi.gatewayIP();
 
-    reply += F("Uptime:<TD>");
+    reply += printWebString;
+    reply += F("<form>");
+    reply += F("<table><TH>System Info<TH><TH>");
+
+#if FEATURE_TIME
+    if (Settings.UseNTP)
+    {
+      reply += F("<TR><TD>System Time:<TD>");
+      reply += hour();
+      reply += ":";
+      if (minute() < 10)
+        reply += "0";
+      reply += minute();
+    }
+#endif
+
+    reply += F("<TR><TD>Uptime:<TD>");
     reply += wdcounter / 2;
     reply += F(" minutes");
 
@@ -192,8 +199,22 @@ void handle_root() {
     reply += F("<TR><TD>Free Mem:<TD>");
     reply += freeMem;
 
+    reply += F("<TR><TD>Boot cause:<TD>");
+    switch (lastBootCause)
+    {
+      case BOOT_CAUSE_MANUAL_REBOOT:
+        reply += F("Manual reboot");
+        break;
+      case BOOT_CAUSE_COLD_BOOT:
+        reply += F("Cold boot");
+        break;
+      case BOOT_CAUSE_EXT_WD:
+        reply += F("External Watchdog");
+        break;
+    }
+
     reply += F("<TR><TH>Node List:<TH>IP<TH>Age<TR><TD><TD>");
-    for (byte x = 0; x < 32; x++)
+    for (byte x = 0; x < UNIT_MAX; x++)
     {
       if (Nodes[x].ip[0] != 0)
       {
@@ -223,17 +244,17 @@ void handle_root() {
     // have to disconnect or reboot from within the main loop
     // because the webconnection is still active at this point
     // disconnect here could result into a crash/reboot...
-    if (strcasecmp_P(command, PSTR("wifidisconnect")) == 0)
+    if (strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) == 0)
     {
       String log = F("WIFI : Disconnecting...");
-      addLog(LOG_LEVEL_INFO,log);
+      addLog(LOG_LEVEL_INFO, log);
       cmd_within_mainloop = CMD_WIFI_DISCONNECT;
     }
 
-    if (strcasecmp_P(command, PSTR("reboot")) == 0)
+    if (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) == 0)
     {
       String log = F("     : Rebooting...");
-      addLog(LOG_LEVEL_INFO,log);
+      addLog(LOG_LEVEL_INFO, log);
       cmd_within_mainloop = CMD_REBOOT;
     }
 
@@ -255,6 +276,7 @@ void handle_config() {
   String ssid = WebServer.arg("ssid");
   String key = WebServer.arg("key");
   String controllerip = WebServer.arg("controllerip");
+  String controllerhostname = WebServer.arg("controllerhostname");
   String controllerport = WebServer.arg("controllerport");
   String protocol = WebServer.arg("protocol");
   String controlleruser = WebServer.arg("controlleruser");
@@ -264,42 +286,40 @@ void handle_config() {
   String espip = WebServer.arg("espip");
   String espgateway = WebServer.arg("espgateway");
   String espsubnet = WebServer.arg("espsubnet");
+  String espdns = WebServer.arg("espdns");
   String unit = WebServer.arg("unit");
   String apkey = WebServer.arg("apkey");
 
   if (ssid[0] != 0)
   {
-    name.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(Settings.Name, tmpString);
-    password.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.Password, tmpString);
-    ssid.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiSSID, tmpString);
-    key.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiKey, tmpString);
-    apkey.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.WifiAPKey, tmpString);
-    controllerip.toCharArray(tmpString, 26);
-    str2ip(tmpString, Settings.Controller_IP);
-    Settings.ControllerPort = controllerport.toInt();
-    controlleruser.toCharArray(tmpString, 26);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.ControllerUser, tmpString);
-    controllerpassword.toCharArray(tmpString, 64);
-    urlDecode(tmpString);
-    strcpy(SecuritySettings.ControllerPassword, tmpString);
+    strncpy(Settings.Name, name.c_str(), sizeof(Settings.Name));
+    strncpy(SecuritySettings.Password, password.c_str(), sizeof(SecuritySettings.Password));
+    strncpy(SecuritySettings.WifiSSID, ssid.c_str(), sizeof(SecuritySettings.WifiSSID));
+    strncpy(SecuritySettings.WifiKey, key.c_str(), sizeof(SecuritySettings.WifiKey));
+    strncpy(SecuritySettings.WifiAPKey, apkey.c_str(), sizeof(SecuritySettings.WifiAPKey));
+
     if (Settings.Protocol != protocol.toInt())
+    {
+      Settings.Protocol = protocol.toInt();
+      byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+      Settings.ControllerPort = Protocol[ProtocolIndex].defaultPort;
+      if (Protocol[ProtocolIndex].usesMQTT)
+        CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, 0);
+    }
+    else
+    {
+      if (Settings.Protocol != 0)
       {
-        Settings.Protocol = protocol.toInt();
-        byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
-        if (Protocol[ProtocolIndex].usesMQTT)
-          CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, 0);
+        controllerip.toCharArray(tmpString, 26);
+        str2ip(tmpString, Settings.Controller_IP);
+        strncpy(Settings.ControllerHostName, controllerhostname.c_str(), sizeof(Settings.ControllerHostName));
+        getIPfromHostName();
+        Settings.ControllerPort = controllerport.toInt();
+        strncpy(SecuritySettings.ControllerUser, controlleruser.c_str(), sizeof(SecuritySettings.ControllerUser));
+        strncpy(SecuritySettings.ControllerPassword, controllerpassword.c_str(), sizeof(SecuritySettings.ControllerPassword));
       }
+    }
+
     Settings.Delay = sensordelay.toInt();
     Settings.deepSleep = (deepsleep == "on");
     espip.toCharArray(tmpString, 26);
@@ -308,12 +328,14 @@ void handle_config() {
     str2ip(tmpString, Settings.Gateway);
     espsubnet.toCharArray(tmpString, 26);
     str2ip(tmpString, Settings.Subnet);
+    espdns.toCharArray(tmpString, 26);
+    str2ip(tmpString, Settings.DNS);
     Settings.Unit = unit.toInt();
     SaveSettings();
   }
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
 
   reply += F("<form name='frmselect' method='post'><table>");
   reply += F("<TH>Main Settings<TH><TR><TD>Name:<TD><input type='text' name='name' value='");
@@ -336,6 +358,7 @@ void handle_config() {
   reply += F("'><TR><TD>Protocol:");
   byte choice = Settings.Protocol;
   reply += F("<TD><select name='protocol' LANGUAGE=javascript onchange=\"return dept_onchange(frmselect)\" >");
+  reply += F("<option value='0'>- Standalone -</option>");
   for (byte x = 0; x <= protocolCount; x++)
   {
     reply += F("<option value='");
@@ -348,29 +371,38 @@ void handle_config() {
     reply += F("</option>");
   }
   reply += F("</select>");
+  reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyProtocols\" target=\"_blank\">?</a>");
 
-  reply += F("<TR><TD>Controller IP:<TD><input type='text' name='controllerip' value='");
   char str[20];
-  sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
-  reply += str;
 
-  reply += F("'><TR><TD>Controller Port:<TD><input type='text' name='controllerport' value='");
-  reply += Settings.ControllerPort;
-
-  if (Settings.Protocol == 9999)
+  if (Settings.Protocol)
   {
-    reply += F("'><TR><TD>Controller User:<TD><input type='text' name='controlleruser' value='");
-    reply += SecuritySettings.ControllerUser;
+    reply += F("<TR><TD>Controller IP:<TD><input type='text' name='controllerip' value='");
+    sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
+    reply += str;
+
+    reply += F("'><TR><TD>Controller Port:<TD><input type='text' name='controllerport' value='");
+    reply += Settings.ControllerPort;
+
+    reply += F("'><TR><TD>Controller Hostname:<TD><input type='text' name='controllerhostname' size='64' value='");
+    reply += Settings.ControllerHostName;
+
+    byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+    if (Protocol[ProtocolIndex].usesAccount)
+    {
+      reply += F("'><TR><TD>Controller User:<TD><input type='text' name='controlleruser' value='");
+      reply += SecuritySettings.ControllerUser;
+    }
+
+    if (Protocol[ProtocolIndex].usesPassword)
+    {
+      reply += F("'><TR><TD>Controller Password:<TD><input type='text' name='controllerpassword' value='");
+      reply += SecuritySettings.ControllerPassword;
+    }
+    reply += F("'>");
   }
 
-  byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
-  if (Protocol[ProtocolIndex].usesPassword)
-  {
-    reply += F("'><TR><TD>Controller Password:<TD><input type='text' name='controllerpassword' value='");
-    reply += SecuritySettings.ControllerPassword;
-  }
-
-  reply += F("'><TR><TD>Sensor Delay:<TD><input type='text' name='delay' value='");
+  reply += F("<TR><TD>Sensor Delay:<TD><input type='text' name='delay' value='");
   reply += Settings.Delay;
   reply += F("'><TR><TD>Sleep Mode:<TD>");
   if (Settings.deepSleep)
@@ -394,10 +426,114 @@ void handle_config() {
   sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Subnet[0], Settings.Subnet[1], Settings.Subnet[2], Settings.Subnet[3]);
   reply += str;
 
+  reply += F("'><TR><TD>ESP DNS:<TD><input type='text' name='espdns' value='");
+  sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.DNS[0], Settings.DNS[1], Settings.DNS[2], Settings.DNS[3]);
+  reply += str;
+
   reply += F("'><TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'>");
   reply += F("</table></form>");
   addFooter(reply);
   WebServer.send(200, "text/html", reply);
+}
+
+
+//********************************************************************************
+// Web Interface hardware page
+//********************************************************************************
+void handle_hardware() {
+  if (!isLoggedIn()) return;
+
+  String pin_i2c_sda = WebServer.arg("psda");
+  String pin_i2c_scl = WebServer.arg("pscl");
+
+  if (pin_i2c_sda.length() != 0)
+  {
+    Settings.Pin_i2c_sda     = pin_i2c_sda.toInt();
+    Settings.Pin_i2c_scl     = pin_i2c_scl.toInt();
+    Settings.PinStates[0] =  WebServer.arg("p0").toInt();
+    Settings.PinStates[2] =  WebServer.arg("p2").toInt();
+    Settings.PinStates[4] =  WebServer.arg("p4").toInt();
+    Settings.PinStates[5] =  WebServer.arg("p5").toInt();
+    Settings.PinStates[9] =  WebServer.arg("p9").toInt();
+    Settings.PinStates[10] =  WebServer.arg("p10").toInt();
+    Settings.PinStates[12] =  WebServer.arg("p12").toInt();
+    Settings.PinStates[13] =  WebServer.arg("p13").toInt();
+    Settings.PinStates[14] =  WebServer.arg("p14").toInt();
+    Settings.PinStates[15] =  WebServer.arg("p15").toInt();
+    Settings.PinStates[16] =  WebServer.arg("p16").toInt();
+
+    SaveSettings();
+  }
+
+  String reply = "";
+  addHeader(true, reply);
+
+  reply += F("<form  method='post'><table><TH>Hardware Settings<TH><TR><TD>");
+  reply += F("<TR><TD>SDA:<TD>");
+  addPinSelect(true, reply, "psda", Settings.Pin_i2c_sda);
+  reply += F("<TR><TD>SCL:<TD>");
+  addPinSelect(true, reply, "pscl", Settings.Pin_i2c_scl);
+
+  reply += F("<TR><TD>Pin mode 0:<TD>");
+  addPinStateSelect(reply, "p0", Settings.PinStates[0]);
+  reply += F("<TR><TD>Pin mode 2:<TD>");
+  addPinStateSelect(reply, "p2", Settings.PinStates[2]);
+  reply += F("<TR><TD>Pin mode 4:<TD>");
+  addPinStateSelect(reply, "p4", Settings.PinStates[4]);
+  reply += F("<TR><TD>Pin mode 5:<TD>");
+  addPinStateSelect(reply, "p5", Settings.PinStates[5]);
+  reply += F("<TR><TD>Pin mode 9:<TD>");
+  addPinStateSelect(reply, "p9", Settings.PinStates[9]);
+  reply += F("<TR><TD>Pin mode 10:<TD>");
+  addPinStateSelect(reply, "p10", Settings.PinStates[10]);
+  reply += F("<TR><TD>Pin mode 12:<TD>");
+  addPinStateSelect(reply, "p12", Settings.PinStates[12]);
+  reply += F("<TR><TD>Pin mode 13:<TD>");
+  addPinStateSelect(reply, "p13", Settings.PinStates[13]);
+  reply += F("<TR><TD>Pin mode 14:<TD>");
+  addPinStateSelect(reply, "p14", Settings.PinStates[14]);
+  reply += F("<TR><TD>Pin mode 15:<TD>");
+  addPinStateSelect(reply, "p15", Settings.PinStates[15]);
+  reply += F("<TR><TD>Pin mode 16:<TD>");
+  addPinStateSelect(reply, "p16", Settings.PinStates[16]);
+
+  reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'><TR><TD>");
+
+  reply += F("</table></form>");
+  addFooter(reply);
+  WebServer.send(200, "text/html", reply);
+}
+
+
+//********************************************************************************
+// Add a GPIO pin select dropdown list
+//********************************************************************************
+void addPinStateSelect(String& str, String name,  int choice)
+{
+  String options[3];
+  options[0] = F("Default");
+  options[1] = F("Output Low");
+  options[2] = F("Output High");
+  int optionValues[3];
+  optionValues[0] = 0;
+  optionValues[1] = 1;
+  optionValues[2] = 2;
+
+  str += F("<select name='");
+  str += name;
+  str += "'>";
+  for (byte x = 0; x < 3; x++)
+  {
+    str += F("<option value='");
+    str += optionValues[x];
+    str += "'";
+    if (choice == optionValues[x])
+      str += F(" selected");
+    str += ">";
+    str += options[x];
+    str += F("</option>");
+  }
+  str += F("</select>");
 }
 
 
@@ -415,12 +551,16 @@ void handle_devices() {
   String taskdeviceid = WebServer.arg("taskdeviceid");
   String taskdevicepin1 = WebServer.arg("taskdevicepin1");
   String taskdevicepin2 = WebServer.arg("taskdevicepin2");
+  String taskdevicepin3 = WebServer.arg("taskdevicepin3");
   String taskdevicepin1pullup = WebServer.arg("taskdevicepin1pullup");
   String taskdevicepin1inversed = WebServer.arg("taskdevicepin1inversed");
   String taskdevicename = WebServer.arg("taskdevicename");
   String taskdeviceport = WebServer.arg("taskdeviceport");
   String taskdeviceformula[VARS_PER_TASK];
   String taskdevicevaluename[VARS_PER_TASK];
+  String taskdevicesenddata = WebServer.arg("taskdevicesenddata");
+  String taskdeviceglobalsync = WebServer.arg("taskdeviceglobalsync");
+
   for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
   {
     char argc[25];
@@ -456,24 +596,14 @@ void handle_devices() {
   {
     if (Settings.TaskDeviceNumber[index - 1] != taskdevicenumber.toInt()) // change of device, clear all other values
     {
+      taskClear(index - 1, false); // clear settings, but do not save
       Settings.TaskDeviceNumber[index - 1] = taskdevicenumber.toInt();
-      ExtraTaskSettings.TaskDeviceName[0] = 0;
-      Settings.TaskDeviceID[index - 1] = 0;
-      Settings.TaskDevicePin1[index - 1] = -1;
-      Settings.TaskDevicePin2[index - 1] = -1;
-      Settings.TaskDevicePort[index - 1] = 0;
-      for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
-      {
-        ExtraTaskSettings.TaskDeviceFormula[varNr][0] = 0;
-        ExtraTaskSettings.TaskDeviceValueNames[varNr][0] = 0;
-      }
     }
     else if (taskdevicenumber.toInt() != 0)
     {
       Settings.TaskDeviceNumber[index - 1] = taskdevicenumber.toInt();
       DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[index - 1]);
       taskdevicename.toCharArray(tmpString, 26);
-      urlDecode(tmpString);
       strcpy(ExtraTaskSettings.TaskDeviceName, tmpString);
       Settings.TaskDevicePort[index - 1] = taskdeviceport.toInt();
       if (Settings.TaskDeviceNumber[index - 1] != 0)
@@ -490,16 +620,31 @@ void handle_devices() {
         Settings.TaskDevicePin2[index - 1] = taskdevicepin2.toInt();
       }
 
+      if (taskdevicepin3.length() != 0)
+        Settings.TaskDevicePin3[index - 1] = taskdevicepin3.toInt();
+
       if (Device[DeviceIndex].PullUpOption)
         Settings.TaskDevicePin1PullUp[index - 1] = (taskdevicepin1pullup == "on");
 
       if (Device[DeviceIndex].InverseLogicOption)
         Settings.TaskDevicePin1Inversed[index - 1] = (taskdevicepin1inversed == "on");
 
+      if (Device[DeviceIndex].SendDataOption)
+        Settings.TaskDeviceSendData[index - 1] = (taskdevicesenddata == "on");
+
+      if (Device[DeviceIndex].GlobalSyncOption)
+        Settings.TaskDeviceGlobalSync[index - 1] = (taskdeviceglobalsync == "on");
+
+      // Send task info if set global
+      if (Settings.TaskDeviceGlobalSync[index - 1])
+      {
+        Serial.println("Sending UDP Task info");
+        SendUDPTaskInfo(0, index - 1, index - 1);
+      }
+
       for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
       {
         taskdeviceformula[varNr].toCharArray(tmpString, 41);
-        urlDecode(tmpString);
         strcpy(ExtraTaskSettings.TaskDeviceFormula[varNr], tmpString);
       }
 
@@ -508,29 +653,18 @@ void handle_devices() {
       for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
       {
         taskdevicevaluename[varNr].toCharArray(tmpString, 26);
-        urlDecode(tmpString);
         strcpy(ExtraTaskSettings.TaskDeviceValueNames[varNr], tmpString);
       }
-
-#ifdef ESP_EASY
       TempEvent.TaskIndex = index - 1;
       PluginCall(PLUGIN_WEBFORM_SAVE, &TempEvent, dummyString);
       PluginCall(PLUGIN_INIT, &TempEvent, dummyString);
-#endif
-#ifdef ESP_CONNEXIO
-      struct NodoEventStruct TempEvent;
-      TempEvent.Par1 = index - 1;
-      PluginCall(PLUGIN_WEBFORM_SAVE, &TempEvent, 0);
-      PluginCall(PLUGIN_INIT, &TempEvent, 0);
-      createEventlist();
-#endif
     }
     SaveTaskSettings(index - 1);
     SaveSettings();
   }
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
 
 
   // show all tasks as table
@@ -542,7 +676,7 @@ void handle_devices() {
     reply += page;
   reply += F("\"><</a>");
   reply += F("<a class=\"button-link\" href=\"devices?setpage=");
-  if (page < 4)
+  if (page < (TASKS_MAX / 4))
     reply += page + 1;
   else
     reply += page;
@@ -579,57 +713,53 @@ void handle_devices() {
     reply += ExtraTaskSettings.TaskDeviceName;
     reply += F("<TD>");
 
-    #ifdef ESP_EASY
-      byte customConfig = false;
-      customConfig = PluginCall(PLUGIN_WEBFORM_SHOW_CONFIG, &TempEvent, reply);
-      if (!customConfig)
-        if (Device[DeviceIndex].Ports != 0)
-          reply += Settings.TaskDevicePort[x];
-    #endif
+    byte customConfig = false;
+    customConfig = PluginCall(PLUGIN_WEBFORM_SHOW_CONFIG, &TempEvent, reply);
+    if (!customConfig)
+      if (Device[DeviceIndex].Ports != 0)
+        reply += Settings.TaskDevicePort[x];
 
     reply += F("<TD>");
-    
+
     if (Settings.TaskDeviceID[x] != 0)
       reply += Settings.TaskDeviceID[x];
 
     reply += F("<TD>");
-    if (Device[DeviceIndex].Type == DEVICE_TYPE_I2C)
-    {
-      reply += F("GPIO-");
-      reply += Settings.Pin_i2c_sda;
-      reply += F("<BR>GPIO-");
-      reply += Settings.Pin_i2c_scl;
-    }
-    if (Device[DeviceIndex].Type == DEVICE_TYPE_ANALOG)
-      reply += F("ADC (TOUT)");
 
-    if (Settings.TaskDevicePin1[x] != -1)
+    if (Settings.TaskDeviceDataFeed[x] == 0)
     {
-      reply += F("GPIO-");
-      reply += Settings.TaskDevicePin1[x];
-    }
+      if (Device[DeviceIndex].Type == DEVICE_TYPE_I2C)
+      {
+        reply += F("GPIO-");
+        reply += Settings.Pin_i2c_sda;
+        reply += F("<BR>GPIO-");
+        reply += Settings.Pin_i2c_scl;
+      }
+      if (Device[DeviceIndex].Type == DEVICE_TYPE_ANALOG)
+        reply += F("ADC (TOUT)");
 
-    if (Settings.TaskDevicePin2[x] != -1)
-    {
-      reply += F("<BR>GPIO-");
-      reply += Settings.TaskDevicePin2[x];
+      if (Settings.TaskDevicePin1[x] != -1)
+      {
+        reply += F("GPIO-");
+        reply += Settings.TaskDevicePin1[x];
+      }
+
+      if (Settings.TaskDevicePin2[x] != -1)
+      {
+        reply += F("<BR>GPIO-");
+        reply += Settings.TaskDevicePin2[x];
+      }
+
+      if (Settings.TaskDevicePin3[x] != -1)
+      {
+        reply += F("<BR>GPIO-");
+        reply += Settings.TaskDevicePin3[x];
+      }
     }
 
     reply += F("<TD>");
     byte customValues = false;
-#ifdef ESP_EASY
     customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, reply);
-#endif
-#ifdef ESP_CONNEXIO
-    struct NodoEventStruct TempEvent;
-    char tmpString[256];
-    tmpString[0] = 0;
-    TempEvent.Par1 = x;
-    customValues = PluginCall(PLUGIN_WEBFORM_VALUES, &TempEvent, tmpString);
-    if (tmpString[0] != 0)
-      reply += tmpString;
-#endif
-
     if (!customValues)
     {
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
@@ -672,88 +802,106 @@ void handle_devices() {
 
       reply += F("<TR><TD>Name:<TD><input type='text' maxlength='25' name='taskdevicename' value='");
       reply += ExtraTaskSettings.TaskDeviceName;
-
-      if (Device[DeviceIndex].Ports != 0)
-      {
-        reply += F("'><TR><TD>Port:<TD><input type='text' name='taskdeviceport' value='");
-        reply += Settings.TaskDevicePort[index - 1];
-      }
-      reply += F("'><TR><TD>IDX / Var:<TD><input type='text' name='taskdeviceid' value='");
-      reply += Settings.TaskDeviceID[index - 1];
       reply += F("'>");
 
-      if (Device[DeviceIndex].Type == DEVICE_TYPE_SINGLE || Device[DeviceIndex].Type == DEVICE_TYPE_DUAL)
+
+      if (!Device[DeviceIndex].Custom)
       {
-        reply += F("<TR><TD>1st GPIO:<TD>");
-        addPinSelect(false, reply, "taskdevicepin1", Settings.TaskDevicePin1[index - 1]);
-      }
-      if (Device[DeviceIndex].Type == DEVICE_TYPE_DUAL)
-      {
-        reply += F("<TR><TD>2nd GPIO:<TD>");
-        addPinSelect(false, reply, "taskdevicepin2", Settings.TaskDevicePin2[index - 1]);
-      }
-
-      if (Device[DeviceIndex].PullUpOption)
-      {
-        reply += F("<TR><TD>Pull UP:<TD>");
-        if (Settings.TaskDevicePin1PullUp[index - 1])
-          reply += F("<input type=checkbox name=taskdevicepin1pullup checked>");
-        else
-          reply += F("<input type=checkbox name=taskdevicepin1pullup>");
-      }
-
-      if (Device[DeviceIndex].InverseLogicOption)
-      {
-        reply += F("<TR><TD>Inversed:<TD>");
-        if (Settings.TaskDevicePin1Inversed[index - 1])
-          reply += F("<input type=checkbox name=taskdevicepin1inversed checked>");
-        else
-          reply += F("<input type=checkbox name=taskdevicepin1inversed>");
-      }
-
-#ifdef ESP_EASY
-      PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, reply);
-#endif
-
-#ifdef ESP_CONNEXIO
-      struct NodoEventStruct TempEvent;
-      char tmpString[256];
-      tmpString[0] = 0;
-      TempEvent.Par1 = index - 1;
-      PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, tmpString);
-      if (tmpString[0] != 0)
-        reply += tmpString;
-#endif
-
-      reply += F("<TR><TH>Optional Settings<TH>Value");
-
-      if (Device[DeviceIndex].FormulaOption)
-      {
-        for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
-        {
-          reply += F("<TR><TD>Formula ");
-          reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
-          reply += F(":<TD><input type='text' maxlength='25' name='taskdeviceformula");
-          reply += varNr + 1;
-          reply += F("' value='");
-          reply += ExtraTaskSettings.TaskDeviceFormula[varNr];
-          reply += F("'>");
-          if (varNr == 0)
-            reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyFormula\" target=\"_blank\">?</a>");
-        }
-      }
-
-      for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
-      {
-        reply += F("<TR><TD>Value Name ");
-        reply += varNr + 1;
-        reply += F(":<TD><input type='text' maxlength='25' name='taskdevicevaluename");
-        reply += varNr + 1;
-        reply += F("' value='");
-        reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+        reply += F("<TR><TD>IDX / Var:<TD><input type='text' name='taskdeviceid' value='");
+        reply += Settings.TaskDeviceID[index - 1];
         reply += F("'>");
       }
 
+      if (!Device[DeviceIndex].Custom && Settings.TaskDeviceDataFeed[index - 1] == 0)
+      {
+        if (Device[DeviceIndex].Ports != 0)
+        {
+          reply += F("<TR><TD>Port:<TD><input type='text' name='taskdeviceport' value='");
+          reply += Settings.TaskDevicePort[index - 1];
+          reply += F("'>");
+        }
+
+        if (Device[DeviceIndex].Type == DEVICE_TYPE_SINGLE || Device[DeviceIndex].Type == DEVICE_TYPE_DUAL)
+        {
+          reply += F("<TR><TD>1st GPIO:<TD>");
+          addPinSelect(false, reply, "taskdevicepin1", Settings.TaskDevicePin1[index - 1]);
+        }
+        if (Device[DeviceIndex].Type == DEVICE_TYPE_DUAL)
+        {
+          reply += F("<TR><TD>2nd GPIO:<TD>");
+          addPinSelect(false, reply, "taskdevicepin2", Settings.TaskDevicePin2[index - 1]);
+        }
+
+        if (Device[DeviceIndex].PullUpOption)
+        {
+          reply += F("<TR><TD>Pull UP:<TD>");
+          if (Settings.TaskDevicePin1PullUp[index - 1])
+            reply += F("<input type=checkbox name=taskdevicepin1pullup checked>");
+          else
+            reply += F("<input type=checkbox name=taskdevicepin1pullup>");
+        }
+
+        if (Device[DeviceIndex].InverseLogicOption)
+        {
+          reply += F("<TR><TD>Inversed:<TD>");
+          if (Settings.TaskDevicePin1Inversed[index - 1])
+            reply += F("<input type=checkbox name=taskdevicepin1inversed checked>");
+          else
+            reply += F("<input type=checkbox name=taskdevicepin1inversed>");
+        }
+      }
+
+      PluginCall(PLUGIN_WEBFORM_LOAD, &TempEvent, reply);
+
+      if (Device[DeviceIndex].SendDataOption)
+      {
+        reply += F("<TR><TD>Send Data:<TD>");
+        if (Settings.TaskDeviceSendData[index - 1])
+          reply += F("<input type=checkbox name=taskdevicesenddata checked>");
+        else
+          reply += F("<input type=checkbox name=taskdevicesenddata>");
+      }
+
+      if (Device[DeviceIndex].GlobalSyncOption && Settings.TaskDeviceDataFeed[index - 1] == 0 && Settings.UDPPort != 0)
+      {
+        reply += F("<TR><TD>Global Sync:<TD>");
+        if (Settings.TaskDeviceGlobalSync[index - 1])
+          reply += F("<input type=checkbox name=taskdeviceglobalsync checked>");
+        else
+          reply += F("<input type=checkbox name=taskdeviceglobalsync>");
+      }
+
+      if (!Device[DeviceIndex].Custom)
+      {
+        reply += F("<TR><TH>Optional Settings<TH>Value");
+
+        if (Device[DeviceIndex].FormulaOption)
+        {
+          for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
+          {
+            reply += F("<TR><TD>Formula ");
+            reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+            reply += F(":<TD><input type='text' maxlength='25' name='taskdeviceformula");
+            reply += varNr + 1;
+            reply += F("' value='");
+            reply += ExtraTaskSettings.TaskDeviceFormula[varNr];
+            reply += F("'>");
+            if (varNr == 0)
+              reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyFormula\" target=\"_blank\">?</a>");
+          }
+        }
+
+        for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
+        {
+          reply += F("<TR><TD>Value Name ");
+          reply += varNr + 1;
+          reply += F(":<TD><input type='text' maxlength='25' name='taskdevicevaluename");
+          reply += varNr + 1;
+          reply += F("' value='");
+          reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+          reply += F("'>");
+        }
+      }
 
     }
     reply += F("<TR><TD><TD><a class=\"button-link\" href=\"devices\">Close</a>");
@@ -768,45 +916,17 @@ void handle_devices() {
 }
 
 
-//********************************************************************************
-// Web Interface hardware page
-//********************************************************************************
-void handle_hardware() {
-  if (!isLoggedIn()) return;
-
-  String pin_i2c_sda = WebServer.arg("pini2csda");
-  String pin_i2c_scl = WebServer.arg("pini2cscl");
-
-  if (pin_i2c_sda.length() != 0)
-  {
-    Settings.Pin_i2c_sda     = pin_i2c_sda.toInt();
-    Settings.Pin_i2c_scl     = pin_i2c_scl.toInt();
-    SaveSettings();
-  }
-
-  String reply = "";
-  addMenu(reply);
-
-  reply += F("<form  method='post'><table><TH>Hardware Settings<TH><TR><TD>");
-  reply += F("<TR><TD>SDA:<TD>");
-  addPinSelect(true, reply, "pini2csda", Settings.Pin_i2c_sda);
-  reply += F("<TR><TD>SCL:<TD>");
-  addPinSelect(true, reply, "pini2cscl", Settings.Pin_i2c_scl);
-
-  reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'><TR><TD>");
-
-  reply += F("</table></form>");
-  addFooter(reply);
-  WebServer.send(200, "text/html", reply);
-}
-
-
+byte sortedIndex[DEVICES_MAX + 1];
 //********************************************************************************
 // Add a device select dropdown list
 //********************************************************************************
 void addDeviceSelect(String& str, String name,  int choice)
 {
-  struct EventStruct TempEvent;
+  // first get the list in alphabetic order
+  for (byte x = 0; x <= deviceCount; x++)
+    sortedIndex[x] = x;
+  sortDeviceArray();
+
   String deviceName;
 
   str += F("<select name='");
@@ -814,22 +934,106 @@ void addDeviceSelect(String& str, String name,  int choice)
   //str += "'>";
   str += "' LANGUAGE=javascript onchange=\"return dept_onchange(frmselect)\">";
 
-
   str += F("<option value='0'></option>");
   for (byte x = 0; x <= deviceCount; x++)
   {
-    if (Plugin_id[x] != 0)
-      Plugin_ptr[x](PLUGIN_GET_DEVICENAME, &TempEvent, deviceName);
+    byte index = sortedIndex[x];
+    if (Plugin_id[index] != 0)
+      Plugin_ptr[index](PLUGIN_GET_DEVICENAME, 0, deviceName);
     str += F("<option value='");
-    str += Device[x].Number;
+    str += Device[index].Number;
     str += "'";
-    if (choice == Device[x].Number)
+    if (choice == Device[index].Number)
       str += F(" selected");
     str += ">";
     str += deviceName;
     str += F("</option>");
   }
   str += F("</select>");
+}
+
+
+//********************************************************************************
+// Device Sort routine, switch array entries
+//********************************************************************************
+void switchArray(byte value)
+{
+  byte temp;
+  temp = sortedIndex[value - 1];
+  sortedIndex[value - 1] = sortedIndex[value];
+  sortedIndex[value] = temp;
+}
+
+
+//********************************************************************************
+// Device Sort routine, compare two array entries
+//********************************************************************************
+byte arrayLessThan(char *ptr_1, char *ptr_2)
+{
+  char check1;
+  char check2;
+
+  int i = 0;
+  while (i < strlen(ptr_1))    // For each character in string 1, starting with the first:
+  {
+    check1 = (char)ptr_1[i];  // get the same char from string 1 and string 2
+
+    //Serial.print("Check 1 is "); Serial.print(check1);
+
+    if (strlen(ptr_2) < i)    // If string 2 is shorter, then switch them
+    {
+      return 1;
+    }
+    else
+    {
+      check2 = (char)ptr_2[i];
+      //   Serial.print("Check 2 is "); Serial.println(check2);
+
+      if (check2 > check1)
+      {
+        return 1;       // String 2 is greater; so switch them
+      }
+      if (check2 < check1)
+      {
+        return 0;       // String 2 is LESS; so DONT switch them
+      }
+      // OTHERWISE they're equal so far; check the next char !!
+      i++;
+    }
+  }
+
+  return 0;
+}
+
+
+//********************************************************************************
+// Device Sort routine, actual sorting
+//********************************************************************************
+void sortDeviceArray()
+{
+  String deviceName;
+  char deviceName1[41];
+  char deviceName2[41];
+  int innerLoop ;
+  int mainLoop ;
+
+  for ( mainLoop = 1; mainLoop <= deviceCount; mainLoop++)
+  {
+    innerLoop = mainLoop;
+    while (innerLoop  >= 1)
+    {
+      Plugin_ptr[sortedIndex[innerLoop]](PLUGIN_GET_DEVICENAME, 0, deviceName);
+      deviceName.toCharArray(deviceName1, 26);
+      Plugin_ptr[sortedIndex[innerLoop - 1]](PLUGIN_GET_DEVICENAME, 0, deviceName);
+      deviceName.toCharArray(deviceName2, 26);
+
+      if (arrayLessThan(deviceName1, deviceName2) == 1)
+      {
+        switchArray(innerLoop);
+      }
+      innerLoop--;
+    }
+  }
 }
 
 
@@ -884,74 +1088,70 @@ void addPinSelect(boolean forI2C, String& str, String name,  int choice)
 }
 
 
-#ifdef ESP_CONNEXIO
 //********************************************************************************
-// Web Interface eventlist page
+// Add a task select dropdown list
 //********************************************************************************
-void handle_eventlist() {
-  if (!isLoggedIn()) return;
+void addTaskSelect(String& str, String name,  int choice)
+{
+  struct EventStruct TempEvent;
+  String deviceName;
 
-  char *TempString = (char*)malloc(80);
-  String reply = "";
-  addMenu(reply);
+  str += F("<select name='");
+  str += name;
+  str += F("' LANGUAGE=javascript onchange=\"return dept_onchange(frmselect)\">");
 
-  reply += F("<table><TH>Eventlist<td><TR><TD>");
-
-  if (WebServer.args() == 1)
+  for (byte x = 0; x < TASKS_MAX; x++)
   {
-
-    struct NodoEventStruct TempEvent;
-    ClearEvent(&TempEvent);
-    byte x = 1;
-    while (Eventlist_Write(x++, 0, &TempEvent, &TempEvent)) delay(1);
-
-    String eventlist = WebServer.arg("eventlist");
-    eventlist.replace("%0D%0A", "\n");
-    int NewLineIndex = eventlist.indexOf('\n');
-    byte limit = 0;
-    byte messagecode = 0;
-    while ((NewLineIndex > 0) && (limit < EventlistMax))
+    deviceName = "";
+    if (Settings.TaskDeviceNumber[x] != 0 )
     {
-      limit++;
-      String line = eventlist.substring(0, NewLineIndex);
-      String strCommand = F("eventlistwrite 0,");
-      strCommand += line;
-      strCommand.toCharArray(TempString, 80);
-      urlDecode(TempString);
+      byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[x]);
 
-      messagecode = ExecuteLine(TempString, VALUE_SOURCE_SERIAL);
-      if (messagecode > 0)
-      {
-        reply += TempString;
-        reply += " : ";
-        reply += MessageText_tabel[messagecode];
-        reply += "<BR>";
-      }
-      eventlist = eventlist.substring(NewLineIndex + 1);
-      NewLineIndex = eventlist.indexOf('\n');
+      if (Plugin_id[DeviceIndex] != 0)
+        Plugin_ptr[DeviceIndex](PLUGIN_GET_DEVICENAME, &TempEvent, deviceName);
     }
-    EEPROM.commit();
+    LoadTaskSettings(x);
+    str += F("<option value='");
+    str += x;
+    str += "'";
+    if (choice == x)
+      str += " selected";
+    if (Settings.TaskDeviceNumber[x] == 0)
+      str += " disabled";
+    str += ">";
+    str += x + 1;
+    str += " - ";
+    str += deviceName;
+    str += " - ";
+    str += ExtraTaskSettings.TaskDeviceName;
+    str += "</option>";
   }
-
-  reply += F("<form method='post'>");
-  reply += F("<TD><textarea name='eventlist' rows='15' cols='80' wrap='on'>");
-  byte x = 1;
-  while (EventlistEntry2str(x++, 0, TempString, false))
-    if (TempString[0] != 0)
-    {
-      reply += TempString;
-      reply += '\n';
-    }
-
-  reply += F("</textarea>");
-
-  reply += F("<TR><TD><TD><input class=\"button-link\" type='submit' value='Submit'>");
-  reply += F("</table></form>");
-  addFooter(reply);
-  WebServer.send(200, "text/html", reply);
-  free(TempString);
 }
-#endif
+
+
+//********************************************************************************
+// Add a Value select dropdown list, based on TaskIndex
+//********************************************************************************
+void addTaskValueSelect(String& str, String name,  int choice, byte TaskIndex)
+{
+  str += F("<select name='");
+  str += name;
+  str += "'>";
+
+  byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
+
+  for (byte x = 0; x < Device[DeviceIndex].ValueCount; x++)
+  {
+    str += F("<option value='");
+    str += x;
+    str += "'";
+    if (choice == x)
+      str += " selected";
+    str += ">";
+    str += ExtraTaskSettings.TaskDeviceValueNames[x];
+    str += "</option>";
+  }
+}
 
 
 //********************************************************************************
@@ -963,7 +1163,7 @@ void handle_log() {
   char *TempString = (char*)malloc(80);
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
   reply += F("<script language='JavaScript'>function RefreshMe(){window.location = window.location}setTimeout('RefreshMe()', 3000);</script>");
   reply += F("<table><TH>Log<TR><TD>");
 
@@ -1001,10 +1201,9 @@ void handle_tools() {
   char command[80];
   command[0] = 0;
   webrequest.toCharArray(command, 80);
-  urlDecode(command);
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
 
   reply += F("<form>");
   reply += F("<table><TH>Tools<TH>");
@@ -1031,12 +1230,7 @@ void handle_tools() {
 
   printToWeb = true;
   printWebString = "<BR>";
-#ifdef ESP_CONNEXIO
-  ExecuteLine(command, VALUE_SOURCE_SERIAL);
-#endif
-#ifdef ESP_EASY
   ExecuteCommand(command);
-#endif
   reply += printWebString;
   reply += F("</table></form>");
   addFooter(reply);
@@ -1055,7 +1249,7 @@ void handle_i2cscanner() {
   char *TempString = (char*)malloc(80);
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
   reply += F("<table><TH>I2C Addresses in use<TH>Known devices");
 
   byte error, address;
@@ -1074,6 +1268,7 @@ void handle_i2cscanner() {
       {
         case 0x20:
         case 0x27:
+        case 0x3F:
           reply += F("PCF8574, MCP23017, LCD Modules");
           break;
         case 0x23:
@@ -1084,6 +1279,10 @@ void handle_i2cscanner() {
           break;
         case 0x39:
           reply += F("TLS2561 Lux Sensor");
+          break;
+        case 0x3C:
+        case 0x3D:
+          reply += F("OLED SSD1306 Display");
           break;
         case 0x40:
           reply += F("SI7021 Temp/Hum Sensor");
@@ -1129,7 +1328,7 @@ void handle_wifiscanner() {
   char *TempString = (char*)malloc(80);
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
   reply += F("<table><TH>Access Points:<TH>RSSI");
 
   int n = WiFi.scanNetworks();
@@ -1163,7 +1362,6 @@ void handle_login() {
   char command[80];
   command[0] = 0;
   webrequest.toCharArray(command, 80);
-  urlDecode(command);
 
   String reply = "";
   reply += F("<form method='post'>");
@@ -1203,7 +1401,6 @@ void handle_control() {
   char command[80];
   command[0] = 0;
   webrequest.toCharArray(command, 80);
-  urlDecode(command);
   boolean validCmd = false;
 
   struct EventStruct TempEvent;
@@ -1213,9 +1410,6 @@ void handle_control() {
   TempEvent.Par2 = 0;
   TempEvent.Par3 = 0;
 
-  char Cmd[40];
-  Cmd[0] = 0;
-  GetArgv(command, Cmd, 1);
   if (GetArgv(command, TmpStr1, 2)) TempEvent.Par1 = str2int(TmpStr1);
   if (GetArgv(command, TmpStr1, 3)) TempEvent.Par2 = str2int(TmpStr1);
   if (GetArgv(command, TmpStr1, 4)) TempEvent.Par3 = str2int(TmpStr1);
@@ -1236,6 +1430,67 @@ void handle_control() {
 
 
 //********************************************************************************
+// Web Interface JSON page (no password!)
+//********************************************************************************
+
+boolean handle_json()
+{
+  String tasknr = WebServer.arg("tasknr");
+  String reply = "";
+
+  byte taskNr = tasknr.toInt();
+  byte firstTaskIndex = 0;
+  byte lastTaskIndex = TASKS_MAX - 1;
+  if (taskNr != 0 )
+  {
+    firstTaskIndex = taskNr - 1;
+    lastTaskIndex = taskNr - 1;
+  }
+
+  byte lastActiveTaskIndex = 0;
+  for (byte TaskIndex = firstTaskIndex; TaskIndex <= lastTaskIndex; TaskIndex++)
+    if (Settings.TaskDeviceNumber[TaskIndex])
+      lastActiveTaskIndex = TaskIndex;
+
+  if (taskNr == 0 )
+    reply += F("{\"Sensors\":[\n");
+  for (byte TaskIndex = firstTaskIndex; TaskIndex <= lastTaskIndex; TaskIndex++)
+  {
+    if (Settings.TaskDeviceNumber[TaskIndex])
+    {
+      byte BaseVarIndex = TaskIndex * VARS_PER_TASK;
+      byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
+      LoadTaskSettings(TaskIndex);
+      reply += F("{\n");
+
+      reply += F("\"TaskName\": \"");
+      reply += ExtraTaskSettings.TaskDeviceName;
+      reply += F("\",\n");
+
+      for (byte x = 0; x < Device[DeviceIndex].ValueCount; x++)
+      {
+        reply += F("\"");
+        reply += ExtraTaskSettings.TaskDeviceValueNames[x];
+        reply += F("\": ");
+        reply += UserVar[BaseVarIndex + x];
+        if (x < (Device[DeviceIndex].ValueCount - 1))
+          reply += F(",");
+        reply += F("\n");
+      }
+      reply += F("}");
+      if (TaskIndex != lastActiveTaskIndex)
+        reply += F(",");
+      reply += F("\n");
+    }
+  }
+  if (taskNr == 0 )
+    reply += F("]}\n");
+
+  WebServer.send(200, "application/json", reply);
+}
+
+
+//********************************************************************************
 // Web Interface config page
 //********************************************************************************
 void handle_advanced() {
@@ -1248,6 +1503,9 @@ void handle_advanced() {
   String messagedelay = WebServer.arg("messagedelay");
   String ip = WebServer.arg("ip");
   String syslogip = WebServer.arg("syslogip");
+  String ntphost = WebServer.arg("ntphost");
+  String timezone = WebServer.arg("timezone");
+  String dst = WebServer.arg("dst");
   String sysloglevel = WebServer.arg("sysloglevel");
   String udpport = WebServer.arg("udpport");
   String serialloglevel = WebServer.arg("serialloglevel");
@@ -1256,18 +1514,21 @@ void handle_advanced() {
 #if !FEATURE_SPIFFS
   String customcss = WebServer.arg("customcss");
 #endif
+  String usentp = WebServer.arg("usentp");
+  String wdi2caddress = WebServer.arg("wdi2caddress");
   String edit = WebServer.arg("edit");
 
   if (edit.length() != 0)
   {
     mqttsubscribe.toCharArray(tmpString, 81);
-    urlDecode(tmpString);
     strcpy(Settings.MQTTsubscribe, tmpString);
     mqttpublish.toCharArray(tmpString, 81);
-    urlDecode(tmpString);
     strcpy(Settings.MQTTpublish, tmpString);
     Settings.MessageDelay = messagedelay.toInt();
     Settings.IP_Octet = ip.toInt();
+    ntphost.toCharArray(tmpString, 64);
+    strcpy(Settings.NTPHost, tmpString);
+    Settings.TimeZone = timezone.toInt();
     syslogip.toCharArray(tmpString, 26);
     str2ip(tmpString, Settings.Syslog_IP);
     Settings.UDPPort = udpport.toInt();
@@ -1278,21 +1539,24 @@ void handle_advanced() {
 #if !FEATURE_SPIFFS
     Settings.CustomCSS = (customcss == "on");
 #endif
+    Settings.UseNTP = (usentp == "on");
+    Settings.DST = (dst == "on");
+    Settings.WDI2CAddress = wdi2caddress.toInt();
     SaveSettings();
   }
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
 
   char str[20];
 
   reply += F("<form  method='post'><table>");
   reply += F("<TH>Advanced Settings<TH>Value");
 
-  reply += F("<TR><TD>MQTT Subscribe Template:<TD><input type='text' name='mqttsubscribe' size=80 value='");
+  reply += F("<TR><TD>Subscribe Template:<TD><input type='text' name='mqttsubscribe' size=80 value='");
   reply += Settings.MQTTsubscribe;
 
-  reply += F("'><TR><TD>MQTT Publish Template:<TD><input type='text' name='mqttpublish' size=80 value='");
+  reply += F("'><TR><TD>Publish Template:<TD><input type='text' name='mqttpublish' size=80 value='");
   reply += Settings.MQTTpublish;
 
   reply += F("'><TR><TD>Message Delay (ms):<TD><input type='text' name='messagedelay' value='");
@@ -1300,8 +1564,31 @@ void handle_advanced() {
 
   reply += F("'><TR><TD>Fixed IP Octet:<TD><input type='text' name='ip' value='");
   reply += Settings.IP_Octet;
+  reply += F("'>");
 
-  reply += F("'><TR><TD>Syslog IP:<TD><input type='text' name='syslogip' value='");
+#if FEATURE_TIME
+  reply += F("<TR><TD>Use NTP:<TD>");
+  if (Settings.UseNTP)
+    reply += F("<input type=checkbox name='usentp' checked>");
+  else
+    reply += F("<input type=checkbox name='usentp'>");
+
+  reply += F("<TR><TD>NTP Hostname:<TD><input type='text' name='ntphost' size=64 value='");
+  reply += Settings.NTPHost;
+
+  reply += F("'><TR><TD>Timezone Offset:<TD><input type='text' name='timezone' size=2 value='");
+  reply += Settings.TimeZone;
+  reply += F("'>");
+
+  reply += F("<TR><TD>DST:<TD>");
+  if (Settings.DST)
+    reply += F("<input type=checkbox name='dst' checked>");
+  else
+    reply += F("<input type=checkbox name='dst'>");
+
+#endif
+
+  reply += F("<TR><TD>Syslog IP:<TD><input type='text' name='syslogip' value='");
   str[0] = 0;
   sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Syslog_IP[0], Settings.Syslog_IP[1], Settings.Syslog_IP[2], Settings.Syslog_IP[3]);
   reply += str;
@@ -1320,6 +1607,10 @@ void handle_advanced() {
 
   reply += F("'><TR><TD>Baud Rate:<TD><input type='text' name='baudrate' value='");
   reply += Settings.BaudRate;
+  reply += F("'>");
+
+  reply += F("<TR><TD>WD I2C Address:<TD><input type='text' name='wdi2caddress' value='");
+  reply += Settings.WDI2CAddress;
   reply += F("'>");
 
 #if !FEATURE_SPIFFS
@@ -1359,42 +1650,6 @@ boolean isLoggedIn()
   return WebLoggedIn;
 }
 
-//********************************************************************************
-// Decode special characters in URL of get/post data
-//********************************************************************************
-void urlDecode(char *src)
-{
-  char* dst = src;
-  char a, b;
-  while (*src) {
-
-    if (*src == '+')
-      *src = ' ';
-
-    if ((*src == '%') &&
-        ((a = src[1]) && (b = src[2])) &&
-        (isxdigit(a) && isxdigit(b))) {
-      if (a >= 'a')
-        a -= 'a' - 'A';
-      if (a >= 'A')
-        a -= ('A' - 10);
-      else
-        a -= '0';
-      if (b >= 'a')
-        b -= 'a' - 'A';
-      if (b >= 'A')
-        b -= ('A' - 10);
-      else
-        b -= '0';
-      *dst++ = 16 * a + b;
-      src += 3;
-    }
-    else {
-      *dst++ = *src++;
-    }
-  }
-  *dst++ = '\0';
-}
 
 #if FEATURE_SPIFFS
 //********************************************************************************
@@ -1423,7 +1678,7 @@ void handle_upload() {
   String edit = WebServer.arg("edit");
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
 
   if (edit.length() != 0)
   {
@@ -1456,7 +1711,7 @@ void handleFileUpload() {
 
   static boolean valid = false;
   String log = "";
-  
+
   HTTPUpload& upload = WebServer.upload();
 
   if (upload.filename.c_str()[0] == 0)
@@ -1469,7 +1724,7 @@ void handleFileUpload() {
   {
     log = F("Upload: START, filename: ");
     log += upload.filename;
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO, log);
     valid = false;
     uploadResult = 0;
   }
@@ -1507,14 +1762,14 @@ void handleFileUpload() {
     if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
     log = F("Upload: WRITE, Bytes: ");
     log += upload.currentSize;
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO, log);
   }
   else if (upload.status == UPLOAD_FILE_END)
   {
     if (uploadFile) uploadFile.close();
     log = F("Upload: END, Size: ");
     log += upload.totalSize;
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO, log);
   }
 
   if (valid)
@@ -1558,25 +1813,6 @@ bool loadFromSPIFFS(String path) {
   return true;
 }
 
-//********************************************************************************
-// Web Interface handle other requests
-//********************************************************************************
-void handleNotFound() {
-  if (!isLoggedIn()) return;
-  if (loadFromSPIFFS(WebServer.uri())) return;
-  String message = "URI: ";
-  message += WebServer.uri();
-  message += "\nMethod: ";
-  message += (WebServer.method() == HTTP_GET) ? "GET" : "POST";
-  message += "\nArguments: ";
-  message += WebServer.args();
-  message += "\n";
-  for (uint8_t i = 0; i < WebServer.args(); i++) {
-    message += " NAME:" + WebServer.argName(i) + "\n VALUE:" + WebServer.arg(i) + "\n";
-  }
-  WebServer.send(404, "text/plain", message);
-}
-
 
 //********************************************************************************
 // Web Interface file list)
@@ -1591,7 +1827,7 @@ void handle_filelist() {
   }
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
   reply += F("<table border='1'><TH><TH>Filename:<TH>Size");
 
   Dir dir = SPIFFS.openDir("/");
@@ -1701,7 +1937,7 @@ void handle_upload() {
   if (!isLoggedIn()) return;
 
   String reply = "";
-  addMenu(reply);
+  addHeader(true, reply);
   reply += F("<form enctype=\"multipart/form-data\" method=\"post\"><p>Upload settings:<br><input type=\"file\" name=\"datafile\" size=\"40\"></p><div><input class=\"button-link\" type='submit' value='Upload'></div></form>");
   addFooter(reply);
   WebServer.send(200, "text/html", reply);
@@ -1736,7 +1972,7 @@ void handleFileUpload()
     }
     log = F("Upload start ");
     log += (char *)upload.filename.c_str();
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO, log);
     page = 0;
     data = new uint8_t[FLASH_EEPROM_SIZE];
   }
@@ -1775,7 +2011,7 @@ void handleFileUpload()
   if (upload.status == UPLOAD_FILE_END)
   {
     log = F("Upload end");
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO, log);
     delete [] data;
     if (filetype == 1)
       LoadSettings();
@@ -1784,4 +2020,162 @@ void handleFileUpload()
   }
 }
 #endif
+
+
+//********************************************************************************
+// Web Interface handle other requests
+//********************************************************************************
+void handleNotFound() {
+
+  if (wifiSetup)
+  {
+    WebServer.send(200, "text/html", "<meta HTTP-EQUIV='REFRESH' content='0; url=http://192.168.4.1/setup'>");
+    //WebServer.send(200, "text/html", "<a class=\"button-menu\" href=\"setup\">Setup</a>");
+    return;
+  }
+
+  if (!isLoggedIn()) return;
+#if FEATURE_SPIFFS
+  if (loadFromSPIFFS(WebServer.uri())) return;
+#endif
+  String message = "URI: ";
+  message += WebServer.uri();
+  message += "\nMethod: ";
+  message += (WebServer.method() == HTTP_GET) ? "GET" : "POST";
+  message += "\nArguments: ";
+  message += WebServer.args();
+  message += "\n";
+  for (uint8_t i = 0; i < WebServer.args(); i++) {
+    message += " NAME:" + WebServer.argName(i) + "\n VALUE:" + WebServer.arg(i) + "\n";
+  }
+  WebServer.send(404, "text/plain", message);
+}
+
+
+//********************************************************************************
+// Web Interface Setup Wizard
+//********************************************************************************
+void handle_setup() {
+
+  String reply = "";
+  addHeader(false, reply);
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    SaveSettings();
+    IPAddress ip = WiFi.localIP();
+    char host[20];
+    sprintf_P(host, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
+    reply += F("<BR>ESP is connected and using IP Address: ");
+    reply += host;
+    reply += F("<BR><BR>Connect your laptop / tablet / phone back to your main Wifi network and ");
+    reply += F("<a class=\"button-menu\" href='http://");
+    reply += host;
+    reply += F("/config'>Proceed to main config</a>");
+    addFooter(reply);
+    WebServer.send(200, "text/html", reply);
+    wifiSetup = false;
+    WifiAPMode(false);
+    return;
+  }
+
+  static byte status = 0;
+  static int n = 0;
+  static byte refreshCount = 0;
+  String ssid = WebServer.arg("ssid");
+  String other = WebServer.arg("other");
+  String password = WebServer.arg("pass");
+
+  if (other.length() != 0)
+  {
+    ssid = other;
+  }
+
+  // if ssid config not set and params are both provided
+  if (status == 0 && ssid.length() != 0 && password.length() != 0 && strcasecmp(SecuritySettings.WifiSSID, "ssid") == 0)
+  {
+    strncpy(SecuritySettings.WifiKey, password.c_str(), sizeof(SecuritySettings.WifiKey));
+    strncpy(SecuritySettings.WifiSSID, ssid.c_str(), sizeof(SecuritySettings.WifiSSID));
+    wifiSetupConnect = true;
+    status = 1;
+    refreshCount = 0;
+  }
+
+  reply += F("<h1>Wifi Setup wizard</h1><BR>");
+  reply += F("<form name='frmselect' method='post'>");
+
+  if (status == 0)  // first step, scan and show access points within reach...
+  {
+    if (n == 0)
+      n = WiFi.scanNetworks();
+
+    if (n == 0)
+      reply += F("No Access Points found");
+    else
+    {
+      for (int i = 0; i < n; ++i)
+      {
+        reply += F("<input type='radio' name='ssid' value='");
+        reply += WiFi.SSID(i);
+        reply += F("'");
+        if (WiFi.SSID(i) == ssid)
+          reply += F(" checked ");
+        reply += F(">");
+        reply += WiFi.SSID(i);
+        reply += F("</input><br>");
+      }
+    }
+
+    reply += F("<input type='radio' name='ssid' id='other_ssid' value='other' >other SSID:</input>");
+    reply += F("<input type ='text' name='other' value='");
+    reply += other;
+    reply += F("'><br><br>");
+    reply += F("Password: <input type ='text' name='pass' value='");
+    reply += password;
+    reply += F("'><br>");
+
+    reply += F("<input type='submit' value='Connect'>");
+  }
+
+  if (status == 1)  // connecting stage...
+  {
+    if (refreshCount > 0)
+    {
+      status = 0;
+      strncpy(SecuritySettings.WifiSSID, "ssid", sizeof(SecuritySettings.WifiSSID));
+      SecuritySettings.WifiKey[0] = 0;
+      reply += F("<a class=\"button-menu\" href=\"setup\">Back to Setup</a>");
+    }
+    else
+    {
+      int wait = 20;
+      if (refreshCount != 0)
+        wait = 3;
+      reply += F("Please wait for <h1 id=\"countdown\">20..</h1>");
+      reply += F("<script type=\"text/JavaScript\">");
+      reply += F("function timedRefresh(timeoutPeriod) {");
+      reply += F("   var timer = setInterval(function() {");
+      reply += F("   if (timeoutPeriod > 0) {");
+      reply += F("       timeoutPeriod -= 1;");
+      reply += F("       document.getElementById(\"countdown\").innerHTML = timeoutPeriod + \"..\" + \"<br />\";");
+      reply += F("   } else {");
+      reply += F("       clearInterval(timer);");
+      reply += F("            window.location.href = window.location.href;");
+      reply += F("       };");
+      reply += F("   }, 1000);");
+      reply += F("};");
+      reply += F("timedRefresh(");
+      reply += wait;
+      reply += F(");");
+      reply += F("</script>");
+      reply += F("seconds while trying to connect");
+    }
+    refreshCount++;
+  }
+
+  reply += F("</form>");
+  addFooter(reply);
+  WebServer.send(200, "text/html", reply);
+  delay(10);
+}
 

@@ -4,7 +4,7 @@
 
 #define PLUGIN_004
 #define PLUGIN_ID_004         4
-#define PLUGIN_NAME_004       "Temperature DS18b20"
+#define PLUGIN_NAME_004       "Temperature - DS18b20"
 #define PLUGIN_VALUENAME1_004 "Temperature"
 
 uint8_t Plugin_004_DallasPin;
@@ -26,6 +26,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 
@@ -85,7 +86,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         Plugin_004_DallasPin = Settings.TaskDevicePin1[event->TaskIndex];
         byte devCount = Plugin_004_DS_scan(Settings.TaskDevicePluginConfig[event->TaskIndex][0], addr);
         for (byte x=0; x < 8; x++)
-          ExtraTaskSettings.TaskDevicePluginConfig[x] = addr[x];
+          ExtraTaskSettings.TaskDevicePluginConfigLong[x] = addr[x];
         SaveTaskSettings(event->TaskIndex);
         success = true;
         break;
@@ -97,7 +98,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
           {
             if (x !=0)
               string += "-";
-            string += String(ExtraTaskSettings.TaskDevicePluginConfig[x],HEX);
+            string += String(ExtraTaskSettings.TaskDevicePluginConfigLong[x],HEX);
           }
         success = true;
         break;
@@ -109,7 +110,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         // Load ROM address from tasksettings
         LoadTaskSettings(event->TaskIndex);
         for (byte x=0; x < 8; x++)
-          addr[x] = ExtraTaskSettings.TaskDevicePluginConfig[x];
+          addr[x] = ExtraTaskSettings.TaskDevicePluginConfigLong[x];
 
         Plugin_004_DallasPin = Settings.TaskDevicePin1[event->TaskIndex];
         float value = 0;
@@ -130,7 +131,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
           {
             if (x !=0)
               log += "-";
-            log += String(ExtraTaskSettings.TaskDevicePluginConfig[x],HEX);
+            log += String(ExtraTaskSettings.TaskDevicePluginConfigLong[x],HEX);
           }
         log += ')';
         addLog(LOG_LEVEL_INFO,log);

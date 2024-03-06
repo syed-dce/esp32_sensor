@@ -4,7 +4,7 @@
 
 #define PLUGIN_006
 #define PLUGIN_ID_006        6
-#define PLUGIN_NAME_006       "Temp + Baro BMP085"
+#define PLUGIN_NAME_006       "Temperature & Pressure - BMP085"
 #define PLUGIN_VALUENAME1_006 "Temperature"
 #define PLUGIN_VALUENAME2_006 "Pressure"
 
@@ -26,6 +26,7 @@ boolean Plugin_006(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 

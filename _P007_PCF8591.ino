@@ -18,7 +18,7 @@
  \*********************************************************************************************/
 #define PLUGIN_007
 #define PLUGIN_ID_007         7
-#define PLUGIN_NAME_007       "PCF8591 Analog input"
+#define PLUGIN_NAME_007       "Analog input - PCF8591"
 #define PLUGIN_VALUENAME1_007 "Analog"
 
 boolean Plugin_007(byte function, struct EventStruct *event, String& string)
@@ -39,6 +39,7 @@ boolean Plugin_007(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 

@@ -4,7 +4,7 @@
 
 #define PLUGIN_005
 #define PLUGIN_ID_005         5
-#define PLUGIN_NAME_005       "Temp + Hum DHT"
+#define PLUGIN_NAME_005       "Temperature & Humidity - DHT"
 #define PLUGIN_VALUENAME1_005 "Temperature"
 #define PLUGIN_VALUENAME2_005 "Humidity"
 
@@ -26,6 +26,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
         break;
       }
 

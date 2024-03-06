@@ -1,3 +1,127 @@
+// R64 14-01-2016
+// Experimental: Added simple json interface to retrieve sensor data using http
+// Experimental: Prepare tasks for remote data feed (Work in progress...)
+// Added %uptime% as variable for display
+// Added padding to LCD/OLED display
+// Added support for local button to turn on LCD/OLED display with configurable timeout
+// Changed: no system time displayed when NTP is disabled
+// Added protocol option "Standalone" for units without a controller
+// Fixed UNIT_MAX in node list
+// Added boot config for GPIO pin states
+
+// R63 10-01-2016
+// Added Wifi connect setup 'wizard' using captive portal
+// Enabled formula for PME plugin
+
+// R62 09-01-2016
+// Changed Pro Mini Expander plugin to read 10 bit analog values
+//  Pro Mini sketch is also updated, so reprogram your Pro Mini too!
+
+// R61 08-01-2016
+// Fix SI7021 plugin for compatibility with HTU21D (contributed by Hallard)
+//   added a few more mSec to each settings, because my SI7021 sample still had read errors...
+// Added boot cause info for external watchdog
+
+// R60 05-01-2016
+// Prepared for plugin numbers ranging between 1-255 (maximum active is still limited to 64!)
+// Changed hardcoded page limit 4 to TASK_MAX/4
+// Added support for MLX90614 IIR Temperature sensor (contributed by lindeger)
+// Added support for ADS1115 ADC (contributed by lindeger)
+
+// R59 02-01-2016
+// Replaced delay(10) with yield in backgroundtasks()
+// Changed PN532 plugin init stage en reduced sample frequency
+// Restored original I2C Watchdog feed for further development
+// Fixed bug in HCSR04 and other plugins where buffersize was too short
+
+// R58 28-12-2015
+// Fixed bug with right align on LCD 4x20
+// Time feature can be disabled with #define at compile time
+// No longer using time library, moved relevant parts to Misc tab
+// Set system name as DHCP hostname
+// Fixed bug with levelcontrol for other values in taskvalue dropdown list
+
+// R57 23-12-2015
+// Moved display template handling to generic function parseTemplate() to avoid a lot of similar code in both plugins.
+// Added some variable features to LCD/OLED template, you can use %sysname%, %systime% and %ip%
+// NTP time can be enabled through advanced settings and defaults to disabled
+// Added clear command to LCD/OLED plugins
+
+// R56 22-12-2015
+// Added DNS static config option
+// Added NTP host name config (optional, defaults to pool.ntp.org)
+// Added TimeZone config
+// Added Controller Hostname config (optional, use instead of IP)
+// Added System time to main info page
+// Added switch case to ThingSpeak controller
+
+// R55 21-12-2015
+// Experimental development: Added time lib and NTP support
+// Bugfix for LCD plugin display size
+
+// R54 20-12-2015
+// LCD I2C address and display size can be configured in the webgui
+// OLED I2C address and display rotation can be configured in the webgui
+// OLEDCMD and LCDCMD commands added to turn the display on or off
+// Removed the +15 offset in BH1750 plugin
+
+// R53 19-12-2015
+// Added some serial debug commands:
+// "load" to load settings from flash while running
+// "flashdump <start>, <end>" to show flash contents
+// Changed WifiConnect, added retry and changed delays, set static ip before connecting
+// Wifi config is no longer persistent in SDK controlled flash memory
+
+// R52 17-12-2015
+// Changed send delay routine
+// Added feature "Send data" enable/disable to all tasks
+// Removed "send data" setting from Level Control plugin since this is now standard
+// Check on build changes to fix some changes in tasks
+// Removed all urlDecode() since this is handled in the ESP Core as of stable 2.0.0
+
+// R51 13-12-2015
+// Changed UDP handling back to a single socket for RX/TX
+// Moved LCD init from main tab to LCD plugin
+// Added pulse support on MCP23017 (contributed by fgmx85)
+
+// R50 10-12-2015
+// First attempt on having a generic HTTP controller interface
+
+// R49 08-12-2015
+// Changes to urldecode and WPAKey handling (contributed by ixtrader)
+// Added MQTT authentication (contributed by Chrille)
+// Changing protocol sets default TCP port
+
+// R48 01-12-2015
+// Code cleanup, candidate for Arduino ESP Core 2.0.0.
+
+// R47 29-11-2015
+// Support for using http commands to control OLED en LCD displays
+
+// R46 28-11-2015
+// Added Wiki help button to Protocol dropdown
+// Added basic text message support for I2C OLED SSD1306 display
+
+// R45 22-11-2015
+// Bugfix: PCA9685 plugin needs to be listed in the dropdown list
+//   else counting/sorting will have issues. But it currently has no real purpose
+
+// R44 22-11-2015
+// Added basic support for PCA9685, simple pwm output using control web page
+
+// R43 15-11-2015
+// UDP calls to plugins
+// Bugfix for TSL2561 plugin
+
+// R42 08-11-2015
+// Added support for serial to WiFi bridge applications (very experimental state!)
+// Added limited support for local level control like thermostat function (questionable development for a sensor!)
+// Device dropdown list is alphabetically ordered
+
+// R41 01-11-2015
+// Added support for Sharp GP2Y10 dust sensor
+// Added support for PCF8574 IO Expander
+
 // R40 25-10-2015
 // Added support to read classic Mifare tags with PN532 NFC module
 // Fixed sending of Tag values as a real 32 bit long value (no rounding, no decimal fraction)
@@ -6,10 +130,10 @@
 // Added support for IR signal reception (needs a third party library!)
 
 // R38 13-10-2015
-// Added support for I2C TSL2561 Luminosity Sensor
+// Added support for I2C TSL2561 Luminosity Sensor (contributed by Hallard)
 
 // R37 12-10-2015
-// Added support for I2C SI7021 Temperature Humidity sensor
+// Added support for I2C SI7021 Temperature Humidity sensor (contributed by Hallard)
 
 // R36 11-10-2015
 // Added support to control (max 2) Servo motors using http control commands

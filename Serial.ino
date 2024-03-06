@@ -2,7 +2,7 @@
 * Process data from Serial Interface
 \*********************************************************************************************/
 #define INPUT_COMMAND_SIZE          80
-void ExecuteCommand(char *Line)
+void ExecuteCommand(const char *Line)
 {
   char TmpStr1[80];
   TmpStr1[0] = 0;
@@ -21,26 +21,118 @@ void ExecuteCommand(char *Line)
   // commands for debugging
   // ****************************************
 
-  if (strcasecmp_P(Command, PSTR("gpio")) == 0)
+  if (strcasecmp_P(Command, PSTR("getudptaskinfo")) == 0) // local task, remote unit, remote task
   {
-    pinMode(Par1, OUTPUT);
-    digitalWrite(Par1, Par2);
-  }
-  
-  if (strcasecmp_P(Command, PSTR("sensor")) == 0)
-  {
-    SensorSend();
+    char data[6];
+    data[0]= 255;
+    data[1]= 2;
+    data[2]= Settings.Unit; // source unit
+    data[3]= Par2; // dest unit
+    data[4]= Par1-1; // local task
+    data[5]= Par3-1; // task index to request
+    sendUDP(Par2, (byte*) &data, sizeof(data));
   }
 
-  #if FEATURE_SPIFFS
-  if (strcasecmp_P(Command, PSTR("format")) == 0)
+  if (strcasecmp_P(Command, PSTR("getudptaskdata")) == 0) // local task, remote unit, remote task
   {
-    Serial.println(F("formatting..."));
-    SPIFFS.format();
-    Serial.println(F("format done!"));
+    char data[6];
+    data[0]= 255;
+    data[1]= 4;
+    data[2]= Settings.Unit; // source unit
+    data[3]= Par2; // dest unit
+    data[4]= Par1-1; // local task
+    data[5]= Par3-1; // task index to request
+    sendUDP(Par2, (byte*) &data, sizeof(data));
   }
-  #endif
-    
+
+  if (strcasecmp_P(Command, PSTR("TaskClear")) == 0)
+  {
+    taskClear(Par1 - 1,true);
+  }
+
+  if (strcasecmp_P(Command, PSTR("resetinfo")) == 0)
+  {
+    Serial.print(F("getResetInfo: "));
+    Serial.println(ESP.getResetInfo());
+  }
+  
+  if (strcasecmp_P(Command, PSTR("wdconfig")) == 0)
+  {
+    Wire.beginTransmission(Par1);  // address
+    Wire.write(Par2);              // command
+    Wire.write(Par3);              // data
+    Wire.endTransmission();
+  }
+
+  if (strcasecmp_P(Command, PSTR("wdread")) == 0)
+  {
+    Wire.beginTransmission(Par1);  // address
+    Wire.write(0x83);              // command to set pointer
+    Wire.write(Par2);              // pointer value
+    Wire.endTransmission();
+    Wire.requestFrom((uint8_t)Par1, (uint8_t)1);
+    if (Wire.available())
+    {
+      byte value = Wire.read();
+      if(printToWeb)
+      {
+        printWebString += F("Reg value: ");
+        printWebString += value;
+      }      
+      Serial.print(F("Reg value: "));
+      Serial.println(value);
+    }
+  }
+
+#if FEATURE_TIME
+  if (strcasecmp_P(Command, PSTR("ntp")) == 0)
+    getNtpTime();
+#endif
+
+  if (strcasecmp_P(Command, PSTR("setsdk")) == 0)
+  {
+    WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
+    WiFi.disconnect();
+    WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey);
+    WiFi.persistent(false);
+  }
+
+  if (strcasecmp_P(Command, PSTR("clearsdk")) == 0)
+  {
+    WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
+    WiFi.disconnect();
+    WiFi.persistent(false);
+    WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey);
+  }
+
+  if (strcasecmp_P(Command, PSTR("getssid")) == 0)
+  {
+    struct station_config conf;
+    if (wifi_station_get_config(&conf))
+    {
+      Serial.print(F("SDK current: "));
+      Serial.println(String(reinterpret_cast<char*>(conf.ssid)));
+    }
+    struct station_config sconf;
+    if (wifi_station_get_config_default(&sconf))
+    {
+      Serial.print(F("SDK default: "));
+      Serial.println(String(reinterpret_cast<char*>(sconf.ssid)));
+    }
+  }
+
+  if (strcasecmp_P(Command, PSTR("VariableSet")) == 0)
+  {
+    if (GetArgv(Line, TmpStr1, 3))
+      UserVar[Par1 - 1] = atof(TmpStr1);
+  }
+
+  if (strcasecmp_P(Command, PSTR("build")) == 0)
+  {
+    Settings.Build = Par1;
+    SaveSettings();
+  }
+
   if (strcasecmp_P(Command, PSTR("NoSleep")) == 0)
   {
     Settings.deepSleep = 0;
@@ -64,17 +156,18 @@ void ExecuteCommand(char *Line)
     }
   }
 
-  if (strcasecmp_P(Command, PSTR("LCDWrite")) == 0)
+  if (strcasecmp(Command, "DomoticzGet") == 0)
   {
-    GetArgv(Line, TmpStr1, 4);
-    TmpStr1[25] = 0;
-    for (byte x = 0; x < 25; x++)
-      if (TmpStr1[x] == '_')
-        TmpStr1[x] = ' ';
-    lcd.setCursor(Par2 - 1, Par1 - 1);
-    lcd.print(TmpStr1);
+    float value = 0;
+    if (Domoticz_getData(Par2, &value))
+    {
+      Serial.print("DomoticzGet ");
+      Serial.println(value);
+    }
+    else
+      Serial.println("Error getting data");
   }
-
+  
   // ****************************************
   // configure settings commands
   // ****************************************
@@ -94,27 +187,54 @@ void ExecuteCommand(char *Line)
     WifiDisconnect();
 
   if (strcasecmp_P(Command, PSTR("Reboot")) == 0)
-    {
-      pinMode(0,INPUT);
-      pinMode(2,INPUT);
-      pinMode(15,INPUT);
-      ESP.reset();
-    }
-    
+  {
+    pinMode(0, INPUT);
+    pinMode(2, INPUT);
+    pinMode(15, INPUT);
+    ESP.reset();
+  }
+
   if (strcasecmp_P(Command, PSTR("Restart")) == 0)
     ESP.restart();
 
-  if (strcasecmp_P(Command, PSTR("erase")) == 0)
+  if (strcasecmp_P(Command, PSTR("Erase")) == 0)
   {
     EraseFlash();
     saveToRTC(0);
+    WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
+    WiFi.disconnect(); // this will store empty ssid/wpa into sdk storage
+    WiFi.persistent(false); // Do not use SDK storage of SSID/WPA parameters
   }
-  
+
   if (strcasecmp_P(Command, PSTR("Reset")) == 0)
     ResetFactory();
 
   if (strcasecmp_P(Command, PSTR("Save")) == 0)
     SaveSettings();
+
+  if (strcasecmp_P(Command, PSTR("Load")) == 0)
+    LoadSettings();
+
+  if (strcasecmp_P(Command, PSTR("FlashDump")) == 0)
+  {
+    uint32_t _sectorStart = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
+    uint32_t _sectorEnd = ((uint32_t)&_SPIFFS_end - 0x40200000) / SPI_FLASH_SEC_SIZE;
+
+    Serial.print(F("Flash start sector: "));
+    Serial.println(_sectorStart);
+    Serial.print(F("Flash end sector  : "));
+    Serial.println(_sectorEnd);
+    char data[80];
+    if (Par2 == 0) Par2 = Par1;
+    for (int x = Par1; x <= Par2; x++)
+    {
+      LoadFromFlash(x * 1024, (byte*)&data, sizeof(data));
+      Serial.print(F("Offset: "));
+      Serial.print(x);
+      Serial.print(" : ");
+      Serial.println(data);
+    }
+  }
 
   if (strcasecmp_P(Command, PSTR("Delay")) == 0)
     Settings.Delay = Par1;
@@ -162,6 +282,11 @@ void serial()
   {
     yield();
     SerialInByte = Serial.read();
+    if (SerialInByte == 255) // binary data...
+    {
+      Serial.flush();
+      return;
+    }
 
     if (isprint(SerialInByte))
     {
