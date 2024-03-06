@@ -1,3 +1,73 @@
+// R78 06-02-2016
+// Bugfix for PCF8574 plugin, could not address PCF8574A chip types
+
+// R77 04-02-2016
+// Bugfix PN532, code cleanup
+//  The PN532 will not work properly with the current ESP Arduino Core 2.0.0. (!)
+//  Connect the PN532 RSTPDN pin to a GPIO port and configure this in the device settings as reset pin
+//  It will likely reset the PN532 several times a day.
+//  Best we can get so far. May be fixed in Arduino ESP core 2.1.0
+
+// R76 31-01-2016
+// Added retry to PN532 init step
+
+// R75 31-01-2016
+// Fixed a bug for generic http url request variables that needed URLEncoding
+// Fixed too aggresive reset action, PN532 now only resets after three consecutive read errors.
+
+// R74 30-01-2016
+// Fixed a bug where using both controller IP and (DNS) hostname leads to unwanted behavior
+//   more specifically if there is confusion between ESP hostname and controller hostname
+//   now you have to select location by IP or DNS and can't enter both fields simultaniously
+// Fixed a bug for RFID plugins that provide long values to the controller plugin, did not work for the generic http controller plugin
+
+// R73 28-01-2016
+// Removed flashcheck (did not prove much) and many other debug commands
+// Update PN532 plugin, should work better now. And added optional reset GPIO pin.
+
+// R72 23-01-2016
+// Added flashcheck <start>,<end> command (simple read check)
+
+// R71 23-01-2016
+// Changed DHT nul reading logic
+// Added connect failure check in MQTT protocol
+// Added more info on 'flashdump' serial command
+// Factory reset erases entire flash except the sketch and zero fills 64k SPIFFS block
+// System halts with error message if no SPIFFS area set.
+
+// R70 22-01-2016
+// Avoid reporting DHT nul readings.
+// Changed timing SI7021 (contributed by Hallard)
+
+// R69 20-01-2016
+// Cosmetic: removed last empty table row in device edit screen
+// Added help button to firmware upload
+// Added delay to DHT sensor
+// Removed interrupt blocking from DHT sensor to avoid Wifi/Network handling issues in the ESP core
+// Removed interrupt blocking from Dallas sensor to avoid Wifi/Network handling issues in the ESP core
+// Moved UDP check from main loop to background routine
+// Webgui now reports ESP.getFlashChipRealSize()
+// Added detection of missing BMP085 sensor during init
+// Added option to reset target device when the Ser2Net plugin has initialized.
+
+// R68 17-01-2016
+// Changed UDP logging
+// Added OTA update using bin file upload through the ESP Easy webgui (NOT from arduino IDE!)
+//   THIS WILL ONLY WORK ON MODULES WITH MORE THAN 512K FLASH, like the ESP12E modules!
+
+// R67 16-01-2016
+// Added plugin for BME280 Temperature/Humidity/Barometric pressure sensor
+
+// R66 16-01-2016
+// Added plugin for INA219 voltage & current sensor
+// Fixed LCD/OLED padding and now it should actually work in all cases...
+
+// R65 15-01-2016
+// Changed UDP transmit delays
+// Fixed padding feature that broke the option to skip empty lines for local display
+// Added system info plugin (single value device type)
+// Added some system info to http json request output
+
 // R64 14-01-2016
 // Experimental: Added simple json interface to retrieve sensor data using http
 // Experimental: Prepare tasks for remote data feed (Work in progress...)

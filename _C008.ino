@@ -30,19 +30,34 @@ boolean CPlugin_008(byte function, struct EventStruct *event)
           case SENSOR_TYPE_SINGLE:                      // single value sensor, used for Dallas, BH1750, etc
           case SENSOR_TYPE_SWITCH:
           case SENSOR_TYPE_DIMMER:
-            HTTPSend(event, 0, UserVar[event->BaseVarIndex]);
+            HTTPSend(event, 0, UserVar[event->BaseVarIndex], 0);
             break;
           case SENSOR_TYPE_LONG:                      // single LONG value, stored in two floats (rfid tags)
-            HTTPSend(event, 0, (unsigned long)UserVar[event->BaseVarIndex] + ((unsigned long)UserVar[event->BaseVarIndex + 1] << 16));
+            HTTPSend(event, 0, 0, (unsigned long)UserVar[event->BaseVarIndex] + ((unsigned long)UserVar[event->BaseVarIndex + 1] << 16));
             break;
           case SENSOR_TYPE_TEMP_HUM:
           case SENSOR_TYPE_TEMP_BARO:
-            HTTPSend(event, 0, UserVar[event->BaseVarIndex]);
-            unsigned long timer = millis() + Settings.MessageDelay;
-            while (millis() < timer)
-              backgroundtasks();
-            HTTPSend(event, 1, UserVar[event->BaseVarIndex + 1]);
-            break;
+            {
+              HTTPSend(event, 0, UserVar[event->BaseVarIndex], 0);
+              unsigned long timer = millis() + Settings.MessageDelay;
+              while (millis() < timer)
+                backgroundtasks();
+              HTTPSend(event, 1, UserVar[event->BaseVarIndex + 1], 0);
+              break;
+            }
+          case SENSOR_TYPE_TEMP_HUM_BARO:
+            {
+              HTTPSend(event, 0, UserVar[event->BaseVarIndex], 0);
+              unsigned long timer = millis() + Settings.MessageDelay;
+              while (millis() < timer)
+                backgroundtasks();
+              HTTPSend(event, 1, UserVar[event->BaseVarIndex + 1], 0);
+              timer = millis() + Settings.MessageDelay;
+              while (millis() < timer)
+                backgroundtasks();
+              HTTPSend(event, 2, UserVar[event->BaseVarIndex + 2], 0);
+              break;
+            }
         }
         break;
       }
@@ -55,7 +70,7 @@ boolean CPlugin_008(byte function, struct EventStruct *event)
 //********************************************************************************
 // Generic HTTP get request
 //********************************************************************************
-boolean HTTPSend(struct EventStruct *event, byte varIndex, float value)
+boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned long longValue)
 {
   char log[80];
   boolean success = false;
@@ -84,19 +99,19 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value)
     connectionFailures--;
 
   if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0)
-     PluginCall(PLUGIN_GET_DEVICEVALUENAMES, event, dummyString);
-          
+    PluginCall(PLUGIN_GET_DEVICEVALUENAMES, event, dummyString);
+
   String url = "/";
   url += Settings.MQTTpublish;
-  url.replace("%sysname%", Settings.Name);
-  url.replace("%tskname%", ExtraTaskSettings.TaskDeviceName);
+  url.replace("%sysname%", URLEncode(Settings.Name));
+  url.replace("%tskname%", URLEncode(ExtraTaskSettings.TaskDeviceName));
   url.replace("%id%", String(event->idx));
-  url.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[varIndex]);
-  url.replace("%value%", String(value));
-           
-  Serial.print("URL: ");
-  Serial.println(url);
-  
+  url.replace("%valname%", URLEncode(ExtraTaskSettings.TaskDeviceValueNames[varIndex]));
+  if (longValue)
+    url.replace("%value%", String(longValue));
+  else
+    url.replace("%value%", String(value));
+
   url.toCharArray(log, 80);
   addLog(LOG_LEVEL_DEBUG_MORE, log);
   if (printToWeb)

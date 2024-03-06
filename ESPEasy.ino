@@ -46,13 +46,17 @@
 //   PN532 RFID reader
 //   Sharp GP2Y10 dust sensor
 //   PCF8574 I2C IO Expanders
+//   PCA9685 I2C 16 channel PWM driver
 //   OLED I2C display with SSD1306 driver
+//   MLX90614 I2C IR temperature sensor
+//   ADS1115 I2C ADC
+//   INA219 I2C voltage/current sensor
+//   BME280 I2C temp/hum/baro sensor
 
 //   Experimental/Preliminary:
 //   =========================
 //   Ser2Net server
 //   Local Level Control to GPIO
-//   PCA9685 16 channel I2C PWM driver
 
 // ********************************************************************************
 //   User specific configuration
@@ -87,7 +91,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              64
+#define BUILD                              78
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -123,6 +127,7 @@
 #define SENSOR_TYPE_SINGLE                  1
 #define SENSOR_TYPE_TEMP_HUM                2
 #define SENSOR_TYPE_TEMP_BARO               3
+#define SENSOR_TYPE_TEMP_HUM_BARO           4
 #define SENSOR_TYPE_SWITCH                 10
 #define SENSOR_TYPE_DIMMER                 11
 #define SENSOR_TYPE_LONG                   20
@@ -162,6 +167,8 @@
 #if FEATURE_SPIFFS
 #include <FS.h>
 #endif
+#include <ESP8266HTTPUpdateServer.h>
+ESP8266HTTPUpdateServer httpUpdater(true);
 
 // Setup DNS, only used if the ESP has no valid WiFi config
 const byte DNS_PORT = 53;
@@ -240,6 +247,7 @@ struct SettingsStruct
   int8_t        TaskDevicePin3[TASKS_MAX];
   byte          TaskDeviceDataFeed[TASKS_MAX];
   int8_t        PinStates[17];
+  byte          UseDNS;
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -342,6 +350,13 @@ void setup()
 {
   Serial.begin(115200);
 
+  if (SpiffsSectors() == 0)
+  {
+    Serial.println("\nNo SPIFFS area..\nSystem Halted\nPlease reflash with SPIFFS");
+    while(true)
+      delay(1);
+  }
+  
 #if FEATURE_SPIFFS
   fileSystemCheck();
 #endif
@@ -456,7 +471,7 @@ void setup()
   // (captive portal concept)
   if(wifiSetup)
     dnsServer.start(DNS_PORT, "*", apIP);
-  
+
   }
   else
   {
@@ -488,7 +503,6 @@ void loop()
 
   if (systemOK)
   {
-    checkUDP();
 
     if (cmd_within_mainloop != 0)
     {
@@ -651,7 +665,8 @@ void backgroundtasks()
   // process DNS, only used if the ESP has no valid WiFi config
   if(wifiSetup)
     dnsServer.processNextRequest();
-    
+
+  checkUDP();
   WebServer.handleClient();
   MQTTclient.loop();
   yield();

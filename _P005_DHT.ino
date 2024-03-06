@@ -96,7 +96,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
         digitalWrite(Plugin_005_DHT_Pin, HIGH);             // Pull high
         delayMicroseconds(40);
         pinMode(Plugin_005_DHT_Pin, INPUT);                 // change pin to input
-        //delayMicroseconds(40);
+        delayMicroseconds(10);
 
         dht_in = digitalRead(Plugin_005_DHT_Pin);
         if (!dht_in)
@@ -126,28 +126,41 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
 
               if (dht_dat[4] == dht_check_sum)
               {
-
+                float temperature = 0;
+                float humidity = 0;
+                
                 if (Par3 == 11)
                 {
-                  UserVar[event->BaseVarIndex] = float(dht_dat[2]); // Temperature
-                  UserVar[event->BaseVarIndex + 1] = float(dht_dat[0]); // Humidity
+                  temperature = float(dht_dat[2]); // Temperature
+                  humidity = float(dht_dat[0]); // Humidity
                 }
 
                 if (Par3 == 22)
                 {
                   if (dht_dat[2] & 0x80) // negative temperature
-                    UserVar[event->BaseVarIndex] = -0.1 * word(dht_dat[2] & 0x7F, dht_dat[3]);
+                    temperature = -0.1 * word(dht_dat[2] & 0x7F, dht_dat[3]);
                   else
-                    UserVar[event->BaseVarIndex] = 0.1 * word(dht_dat[2], dht_dat[3]);
-                  UserVar[event->BaseVarIndex + 1] = word(dht_dat[0], dht_dat[1]) * 0.1; // Humidity
+                    temperature = 0.1 * word(dht_dat[2], dht_dat[3]);
+                  humidity = word(dht_dat[0], dht_dat[1]) * 0.1; // Humidity
                 }
-                String log = F("DHT  : Temperature: ");
-                log += UserVar[event->BaseVarIndex];
-                addLog(LOG_LEVEL_INFO, log);
-                log = F("DHT  : Humidity: ");
-                log += UserVar[event->BaseVarIndex + 1];
-                addLog(LOG_LEVEL_INFO, log);
-                success = true;
+                if (temperature == 0 && humidity == 0)
+                {
+                  String log = F("DHT  : No reading!");
+                  log += UserVar[event->BaseVarIndex];
+                  addLog(LOG_LEVEL_INFO, log);
+                }
+                else
+                {
+                  UserVar[event->BaseVarIndex] = temperature;
+                  UserVar[event->BaseVarIndex + 1] = humidity;
+                  String log = F("DHT  : Temperature: ");
+                  log += UserVar[event->BaseVarIndex];
+                  addLog(LOG_LEVEL_INFO, log);
+                  log = F("DHT  : Humidity: ");
+                  log += UserVar[event->BaseVarIndex + 1];
+                  addLog(LOG_LEVEL_INFO, log);
+                  success = true;
+                }
               } // checksum
             } // error
           } // dht
@@ -172,7 +185,7 @@ int Plugin_005_read_dht_dat(void)
   byte i = 0;
   byte result = 0;
   byte counter = 0;
-  noInterrupts();
+  //noInterrupts();
   for (i = 0; i < 8; i++)
   {
     while ((!digitalRead(Plugin_005_DHT_Pin)) && (counter < 100))
@@ -182,7 +195,7 @@ int Plugin_005_read_dht_dat(void)
     }
     if (counter >= 100)
     {
-      interrupts();
+      //interrupts();
       return -1;
     }
     delayMicroseconds(30);
@@ -196,11 +209,11 @@ int Plugin_005_read_dht_dat(void)
     }
     if (counter >= 100)
     {
-      interrupts();
+      //interrupts();
       return -1;
     }
   }
-  interrupts();
+  //interrupts();
   return result;
 }
 

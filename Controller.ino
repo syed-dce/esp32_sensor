@@ -115,10 +115,16 @@ void MQTTCheck()
   if (Protocol[ProtocolIndex].usesMQTT)
     if (!MQTTclient.connected())
     {
+      String log = F("MQTT : Connection lost");
+      addLog(LOG_LEVEL_ERROR, log);
+      connectionFailures += 2;
       MQTTclient.disconnect();
       delay(1000);
       MQTTConnect();
     }
+    else
+      if (connectionFailures)
+        connectionFailures--;
 }
 
 
@@ -127,94 +133,6 @@ struct NodeStruct
   byte ip[4];
   byte age;
 } Nodes[UNIT_MAX];
-
-/*********************************************************************************************\
- * Send data to other ESP node
-\*********************************************************************************************/
-boolean nodeVariableCopy(byte var, byte unit)
-{
-  float value = UserVar[var - 1];
-  char log[80];
-  boolean success = false;
-  char host[20];
-
-  if (Nodes[unit].ip[0] == 0)
-  {
-    strcpy_P(log, PSTR("Remote Node unknown"));
-    addLog(LOG_LEVEL_DEBUG, log);
-    if (printToWeb)
-    {
-      printWebString += log;
-      printWebString += "<BR>";
-    }
-    return false;
-  }
-
-  sprintf_P(host, PSTR("%u.%u.%u.%u"), Nodes[unit].ip[0], Nodes[unit].ip[1], Nodes[unit].ip[2], Nodes[unit].ip[3]);
-
-  sprintf_P(log, PSTR("%s%s"), "connecting to ", host);
-  addLog(LOG_LEVEL_DEBUG, log);
-  if (printToWeb)
-  {
-    printWebString += log;
-    printWebString += "<BR>";
-  }
-  // Use WiFiClient class to create TCP connections
-  WiFiClient client;
-  if (!client.connect(host, 80))
-  {
-    connectionFailures++;
-    strcpy_P(log, PSTR("HTTP : connection failed"));
-    addLog(LOG_LEVEL_ERROR, log);
-    if (printToWeb)
-      printWebString += F("connection failed<BR>");
-    return false;
-  }
-  if (connectionFailures)
-    connectionFailures--;
-
-  // We now create a URI for the request
-  String url = F("/?cmd=variableset%20");
-  url += var;
-  url += ",";
-  url += value;
-
-  url.toCharArray(log, 80);
-  addLog(LOG_LEVEL_DEBUG, log);
-  if (printToWeb)
-  {
-    printWebString += log;
-    printWebString += "<BR>";
-  }
-
-  // This will send the request to the server
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "Connection: close\r\n\r\n");
-
-  unsigned long timer = millis() + 200;
-  while (!client.available() && millis() < timer)
-    delay(1);
-
-  // Read all the lines of the reply from server and print them to Serial
-  while (client.available()) {
-    String line = client.readStringUntil('\n');
-    if (line.substring(0, 15) == "HTTP/1.1 200 OK")
-    {
-      strcpy_P(log, PSTR("HTTP : Succes!"));
-      addLog(LOG_LEVEL_DEBUG, log);
-      if (printToWeb)
-        printWebString += F("Success<BR>");
-      success = true;
-    }
-  }
-  strcpy_P(log, PSTR("HTTP : closing connection"));
-  addLog(LOG_LEVEL_DEBUG, log);
-  if (printToWeb)
-    printWebString += F("closing connection<BR>");
-
-  return success;
-}
 
 
 /*********************************************************************************************\
@@ -251,16 +169,16 @@ struct infoStruct
   char ValueNames[VARS_PER_TASK][26];
 };
 
-  struct dataStruct
-  {
-    byte header = 255;
-    byte ID = 5;
-    byte sourcelUnit;
-    byte destUnit;
-    byte sourceTaskIndex;
-    byte destTaskIndex;
-    float Values[VARS_PER_TASK];
-  };
+struct dataStruct
+{
+  byte header = 255;
+  byte ID = 5;
+  byte sourcelUnit;
+  byte destUnit;
+  byte sourceTaskIndex;
+  byte destTaskIndex;
+  float Values[VARS_PER_TASK];
+};
 
 /*********************************************************************************************\
  * Check UDP messages
@@ -290,16 +208,17 @@ void checkUDP()
     }
     else
     {
-      if(packetBuffer[1] > 1 && packetBuffer[1] < 6)
+      if (packetBuffer[1] > 1 && packetBuffer[1] < 6)
       {
-            Serial.println(F("UDP sensor message"));
-            Serial.println((int)packetBuffer[1]); // unit
-            Serial.println((int)packetBuffer[2]); // unit
-            Serial.println((int)packetBuffer[3]); // unit
-            Serial.println((int)packetBuffer[4]); // taskindex
-            Serial.println((int)packetBuffer[5]); // taskindex
+        String log = (F("UDP sensor msg: "));
+        for (byte x = 1; x < 6; x++)
+        {
+          log += " ";
+          log += (int)packetBuffer[x];
+        }
+        addLog(LOG_LEVEL_DEBUG_MORE, log);
       }
-      
+
       // binary data!
       switch (packetBuffer[1])
       {
@@ -354,17 +273,6 @@ void checkUDP()
               SaveTaskSettings(infoReply.destTaskIndex);
               SaveSettings();
             }
-
-            // display stuff for debugging
-/*            Serial.println(infoReply.deviceNumber);
-            String deviceName = "";
-            byte DeviceIndex = getDeviceIndex(infoReply.deviceNumber);
-            Plugin_ptr[DeviceIndex](PLUGIN_GET_DEVICENAME, 0, deviceName);
-            Serial.println(deviceName);
-            Serial.println(infoReply.taskName);
-            for (byte x = 0; x < VARS_PER_TASK; x++)
-              Serial.println(infoReply.ValueNames[x]);
-*/              
             break;
           }
 
@@ -433,6 +341,7 @@ void SendUDPTaskInfo(byte destUnit, byte sourceTaskIndex, byte destTaskIndex)
     sendUDP(x, (byte*)&infoReply, sizeof(infoStruct));
     delay(10);
   }
+  delay(50);
 }
 
 
@@ -461,6 +370,7 @@ void SendUDPTaskData(byte destUnit, byte sourceTaskIndex, byte destTaskIndex)
     sendUDP(x, (byte*) &dataReply, sizeof(dataStruct));
     delay(10);
   }
+  delay(50);
 }
 
 
@@ -471,6 +381,9 @@ void sendUDP(byte unit, byte* data, byte size)
 {
   if (Nodes[unit].ip[0] == 0)
     return;
+  String log = "UDP  : Send UDP message to ";
+  log += unit;
+  addLog(LOG_LEVEL_DEBUG_MORE, log);
 
   IPAddress remoteNodeIP(Nodes[unit].ip[0], Nodes[unit].ip[1], Nodes[unit].ip[2], Nodes[unit].ip[3]);
   portUDP.beginPacket(remoteNodeIP, Settings.UDPPort);

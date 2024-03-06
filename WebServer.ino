@@ -15,8 +15,8 @@ void WebServerInit()
   WebServer.on("/login", handle_login);
   WebServer.on("/control", handle_control);
   WebServer.on("/download", handle_download);
-  WebServer.on("/upload", handle_upload);
-  WebServer.onFileUpload(handleFileUpload);
+  WebServer.on("/upload", HTTP_GET, handle_upload);
+  WebServer.on("/upload", HTTP_POST, handle_upload_post, handleFileUpload);
   WebServer.onNotFound(handleNotFound);
 #if FEATURE_SPIFFS
   WebServer.on("/filelist", handle_filelist);
@@ -26,6 +26,10 @@ void WebServerInit()
   WebServer.on("/advanced", handle_advanced);
   WebServer.on("/setup", handle_setup);
   WebServer.on("/json", handle_json);
+
+  if (ESP.getFlashChipRealSize() > 524288)
+    httpUpdater.setup(&WebServer);
+
   WebServer.begin();
 }
 
@@ -193,8 +197,11 @@ void handle_root() {
     reply += F("<TR><TD>ESP Chip ID:<TD>");
     reply += ESP.getChipId();
 
-    reply += F("<TR><TD>ESP Flash Size:<TD>");
-    reply += ESP.getFlashChipSize();
+    reply += F("<TR><TD>Flash Chip ID:<TD>");
+    reply += ESP.getFlashChipId();
+
+    reply += F("<TR><TD>Flash Size:<TD>");
+    reply += ESP.getFlashChipRealSize(); //ESP.getFlashChipSize();
 
     reply += F("<TR><TD>Free Mem:<TD>");
     reply += freeMem;
@@ -275,6 +282,7 @@ void handle_config() {
   String password = WebServer.arg("password");
   String ssid = WebServer.arg("ssid");
   String key = WebServer.arg("key");
+  String usedns = WebServer.arg("usedns");
   String controllerip = WebServer.arg("controllerip");
   String controllerhostname = WebServer.arg("controllerhostname");
   String controllerport = WebServer.arg("controllerport");
@@ -310,10 +318,21 @@ void handle_config() {
     {
       if (Settings.Protocol != 0)
       {
-        controllerip.toCharArray(tmpString, 26);
-        str2ip(tmpString, Settings.Controller_IP);
-        strncpy(Settings.ControllerHostName, controllerhostname.c_str(), sizeof(Settings.ControllerHostName));
-        getIPfromHostName();
+        Settings.UseDNS = usedns.toInt();
+        if (Settings.UseDNS)
+        {
+          strncpy(Settings.ControllerHostName, controllerhostname.c_str(), sizeof(Settings.ControllerHostName));
+          getIPfromHostName();
+        }
+        else
+        {
+          if (controllerip.length() != 0)
+          {
+            controllerip.toCharArray(tmpString, 26);
+            str2ip(tmpString, Settings.Controller_IP);
+          }
+        }
+
         Settings.ControllerPort = controllerport.toInt();
         strncpy(SecuritySettings.ControllerUser, controlleruser.c_str(), sizeof(SecuritySettings.ControllerUser));
         strncpy(SecuritySettings.ControllerPassword, controllerpassword.c_str(), sizeof(SecuritySettings.ControllerPassword));
@@ -373,19 +392,46 @@ void handle_config() {
   reply += F("</select>");
   reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyProtocols\" target=\"_blank\">?</a>");
 
+
   char str[20];
 
   if (Settings.Protocol)
   {
-    reply += F("<TR><TD>Controller IP:<TD><input type='text' name='controllerip' value='");
-    sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
-    reply += str;
+    byte choice = Settings.UseDNS;
+    String options[2];
+    options[0] = F("Use IP address");
+    options[1] = F("Use Hostname");
+    int optionValues[2];
+    optionValues[0] = 0;
+    optionValues[1] = 1;
+    reply += F("<TR><TD>Locate Controller:<TD><select name='usedns' LANGUAGE=javascript onchange=\"return dept_onchange(frmselect)\" >");
+    for (byte x = 0; x < 2; x++)
+    {
+      reply += F("<option value='");
+      reply += optionValues[x];
+      reply += "'";
+      if (choice == optionValues[x])
+        reply += F(" selected");
+      reply += ">";
+      reply += options[x];
+      reply += F("</option>");
+    }
+    reply += F("</select>");
+
+    if (Settings.UseDNS)
+    {
+      reply += F("<TR><TD>Controller Hostname:<TD><input type='text' name='controllerhostname' size='64' value='");
+      reply += Settings.ControllerHostName;
+    }
+    else
+    {
+      reply += F("<TR><TD>Controller IP:<TD><input type='text' name='controllerip' value='");
+      sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
+      reply += str;
+    }
 
     reply += F("'><TR><TD>Controller Port:<TD><input type='text' name='controllerport' value='");
     reply += Settings.ControllerPort;
-
-    reply += F("'><TR><TD>Controller Hostname:<TD><input type='text' name='controllerhostname' size='64' value='");
-    reply += Settings.ControllerHostName;
 
     byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
     if (Protocol[ProtocolIndex].usesAccount)
@@ -905,7 +951,7 @@ void handle_devices() {
 
     }
     reply += F("<TR><TD><TD><a class=\"button-link\" href=\"devices\">Close</a>");
-    reply += F("<input class=\"button-link\" type='submit' value='Submit'><TR><TD>");
+    reply += F("<input class=\"button-link\" type='submit' value='Submit'>");
     reply += F("<input type='hidden' name='edit' value='1'>");
     reply += F("<input type='hidden' name='page' value='1'>");
     reply += F("</table></form>");
@@ -1216,7 +1262,11 @@ void handle_tools() {
   reply += F("<TR><TD>Interfaces<TD><a class=\"button-link\" href=\"/i2cscanner\">I2C Scan</a><BR><BR>");
   reply += F("<TR><TD>Settings<TD><a class=\"button-link\" href=\"/upload\">Load</a>");
   reply += F("<a class=\"button-link\" href=\"/download\">Save</a>");
-
+  if (ESP.getFlashChipRealSize() > 524288)
+  {
+    reply += F("<TR><TD>Firmware<TD><a class=\"button-link\" href=\"/update\">Load</a>");
+    reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyOTA\" target=\"_blank\">?</a>");
+  }
 #if FEATURE_SPIFFS
   reply += F("<a class=\"button-link\" href=\"/filelist\">List</a><BR><BR>");
 #else
@@ -1285,13 +1335,16 @@ void handle_i2cscanner() {
           reply += F("OLED SSD1306 Display");
           break;
         case 0x40:
-          reply += F("SI7021 Temp/Hum Sensor");
+          reply += F("SI7021 Temp/Hum Sensor, INA219");
           break;
         case 0x48:
           reply += F("PCF8591 ADC");
           break;
         case 0x68:
           reply += F("DS1307 RTC");
+          break;
+        case 0x76:
+          reply += F("BME280");
           break;
         case 0x77:
           reply += F("BMP085");
@@ -1438,6 +1491,20 @@ boolean handle_json()
   String tasknr = WebServer.arg("tasknr");
   String reply = "";
 
+  if (tasknr.length() == 0)
+  {
+    reply += F("{\"System\":{\n");
+    reply += F("\"Build\": ");
+    reply += BUILD;
+    reply += F(",\n\"Unit\": ");
+    reply += Settings.Unit;
+    reply += F(",\n\"Uptime\": ");
+    reply += wdcounter / 2;
+    reply += F(",\n\"Free RAM\": ");
+    reply += ESP.getFreeHeap();
+    reply += F("\n},\n");
+  }
+
   byte taskNr = tasknr.toInt();
   byte firstTaskIndex = 0;
   byte lastTaskIndex = TASKS_MAX - 1;
@@ -1453,7 +1520,7 @@ boolean handle_json()
       lastActiveTaskIndex = TaskIndex;
 
   if (taskNr == 0 )
-    reply += F("{\"Sensors\":[\n");
+    reply += F("\"Sensors\":[\n");
   for (byte TaskIndex = firstTaskIndex; TaskIndex <= lastTaskIndex; TaskIndex++)
   {
     if (Settings.TaskDeviceNumber[TaskIndex])
@@ -1465,7 +1532,10 @@ boolean handle_json()
 
       reply += F("\"TaskName\": \"");
       reply += ExtraTaskSettings.TaskDeviceName;
-      reply += F("\",\n");
+      reply += F("\"");
+      if (Device[DeviceIndex].ValueCount != 0)
+        reply += F(",");
+      reply += F("\n");
 
       for (byte x = 0; x < Device[DeviceIndex].ValueCount; x++)
       {
@@ -1945,6 +2015,21 @@ void handle_upload() {
   printToWeb = false;
 }
 
+//********************************************************************************
+// Web Interface upload page
+//********************************************************************************
+void handle_upload_post() {
+  if (!isLoggedIn()) return;
+
+  String reply = "";
+  addHeader(true, reply);
+  reply += F("Upload finished");
+  addFooter(reply);
+  WebServer.send(200, "text/html", reply);
+  printWebString = "";
+  printToWeb = false;
+}
+
 
 //********************************************************************************
 // Upload handler
@@ -1952,7 +2037,6 @@ void handle_upload() {
 void handleFileUpload()
 {
   if (!isLoggedIn()) return;
-
   String log = "";
   static byte filetype = 0;
   static byte page = 0;
@@ -2177,5 +2261,29 @@ void handle_setup() {
   addFooter(reply);
   WebServer.send(200, "text/html", reply);
   delay(10);
+}
+
+
+//********************************************************************************
+// URNEncode char string to string object
+//********************************************************************************
+String URLEncode(const char* msg)
+{
+    const char *hex = "0123456789abcdef";
+    String encodedMsg = "";
+
+    while (*msg!='\0'){
+        if( ('a' <= *msg && *msg <= 'z')
+                || ('A' <= *msg && *msg <= 'Z')
+                || ('0' <= *msg && *msg <= '9') ) {
+            encodedMsg += *msg;
+        } else {
+            encodedMsg += '%';
+            encodedMsg += hex[*msg >> 4];
+            encodedMsg += hex[*msg & 15];
+        }
+        msg++;
+    }
+    return encodedMsg;
 }
 
