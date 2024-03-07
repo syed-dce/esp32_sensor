@@ -25,6 +25,7 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
         Device[++deviceCount].Number = PLUGIN_ID_020;
         Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
         Device[deviceCount].Custom = true;
+        Device[deviceCount].TimerOption = false;
         break;
       }
 
@@ -111,7 +112,11 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
           serialconfig += (ExtraTaskSettings.TaskDevicePluginConfigLong[2] - 5) << 2;
           if (ExtraTaskSettings.TaskDevicePluginConfigLong[4] == 2)
             serialconfig += 0x20;
-          Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], serialconfig);
+          #if ESP_CORE >= 210
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], (SerialConfig)serialconfig);
+          #else
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], serialconfig);
+          #endif
           ser2netServer = new WiFiServer(ExtraTaskSettings.TaskDevicePluginConfigLong[0]);
           ser2netServer->begin();
 

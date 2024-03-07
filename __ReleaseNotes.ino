@@ -1,3 +1,64 @@
+// R87 18-03-2016
+// Remote sensors also create event for rules
+// Fixed IR sensor type, should be SENSOR_TYPE_LONG as it is a unsigned long value.
+//   Note: the resulting value will change because it was rounded to a limited precision float before!
+
+// R86 18-03-2016
+// Commmand output on tools/command into readonly textarea
+// Print "Ok" or "Unknown command" for commands. Most commands report back to source (serial,http,mqtt)
+// Enabled experimental globalsync feature (could display values from remote sensors on local OLED...)
+// Enabled experimental rules feature (used for testing but may also serve other purposes...)
+
+// R85 13-03-2016
+// Preparations for Arduino Core 2.1.0
+//   Fixed and tested HTTP authentication in C001
+//   Servo library seems to have issues in Core 2.1.0. Using the servo library from 2.0.0.
+//   I2C clockstretchlimit can be set using tools/advanced.
+// Preparations for global pinstate maintenance and status requests
+// Redesign on plugin write output reporting as it was still focussed on HTTP only.
+
+// R84 08-03-2016
+// Preparations for Arduino Core 2.1.0
+//   base64 encoding for HTTP authentication in C001
+//   ConfigSerial casting in ser2net plugin
+//   Wire.setClockStretchLimit(2000) for better PN532 support
+// Bugfix command handling for openhab MQTT protocol using a non default subscribe
+// Added standard logging mechanisme to plugin writes
+
+// R83 03-03-2016
+// Bugfix for ExtraTaskSettings.TaskIndex that was not stored in flash
+// Optimized parseTemplate performance.
+
+// R82 26-02-2016
+// Experimental support for Domoticz MQTT protocol using actuator devices
+//   currently limited to On/Off switches and one channel Dimmers and only build-in GPIO's
+// Use parseCommandString in Webserver handle_control
+// Added option to use plugin commands in tools/commands
+// Display flash size in kB.
+// Restructured main loop
+// Changed sensor timer scheduling, adjust with message delay to spread readings, prevent bursts
+// Removed protocol.name from global memory struct to save RAM
+// Added global system timers
+// Added "LongPulse" commands for build-in GPIO, MCP23017, PCF8574 and PME, using non blocking system timers (inspired by chunter1)
+
+// R81 23-02-2016
+// Added SSDP custom version that uses much less RAM than default library, disabled by default, can be enabled in tools/advanced (contributed by mneuron)
+
+// R80 17-02-2016
+// Added logging controller TCP port
+// Bugfix, set default task timer to main delay if no value entered.
+// Added support for all commands on OpenHAB MQTT, using "<system name>/cmd" topic and the message contains the entire command.
+// Added Wifi signal strength reporting using the System Info device
+// Added network traffic indication to Wifi status led
+
+// R79 16-02-2016
+// Bugfix: I2C Scanner mentions PCA9685 as possible device for address 0x40
+// Added missing pulse feature for PCF8574
+// Added Wifi status LED
+// Added option to send boot state on Switch Input device
+// Added option to use GPIO-1 and GPIO-3 for other purposes than Serial (must disable serial in tools/advanced!)
+// Added individual timers per task
+
 // R78 06-02-2016
 // Bugfix for PCF8574 plugin, could not address PCF8574A chip types
 

@@ -26,6 +26,8 @@ boolean Plugin_019(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].FormulaOption = false;
         Device[deviceCount].ValueCount = 1;
         Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = true;
         break;
       }
 
@@ -58,7 +60,7 @@ boolean Plugin_019(byte function, struct EventStruct *event, String& string)
           {
             String log = F("PCF  : State ");
             log += state;
-            addLog(LOG_LEVEL_INFO,log);
+            addLog(LOG_LEVEL_INFO, log);
             switchstate[event->TaskIndex] = state;
             UserVar[event->BaseVarIndex] = state;
             event->sensorType = SENSOR_TYPE_SWITCH;
@@ -71,23 +73,67 @@ boolean Plugin_019(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WRITE:
       {
-        String tmpString  = string;
-        int argIndex = tmpString.indexOf(',');
-        if (argIndex)
-          tmpString = tmpString.substring(0, argIndex);
-        if (tmpString.equalsIgnoreCase("PCFGPIO"))
+        String log = "";
+        String command = parseString(string, 1);
+
+        if (command == F("pcfgpio"))
         {
           success = true;
           Plugin_019_Write(event->Par1, event->Par2);
-          if (printToWeb)
+          setPinState(PLUGIN_ID_019, event->Par1, PIN_MODE_OUTPUT, event->Par2);
+          log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(event->Par2);
+          addLog(LOG_LEVEL_INFO, log);
+          SendStatus(event->Source, getPinStateJSON(SEARCH_PIN_STATE, PLUGIN_ID_019, event->Par1, log, 0));
+        }
+
+        if (command == F("pcfpulse"))
+        {
+          success = true;
+          Plugin_009_Write(event->Par1, event->Par2);
+          delay(event->Par3);
+          Plugin_009_Write(event->Par1, !event->Par2);
+          setPinState(PLUGIN_ID_019, event->Par1, PIN_MODE_OUTPUT, event->Par2);
+          log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" Pulsed for ")) + String(event->Par3) + String(F(" mS"));
+          addLog(LOG_LEVEL_INFO, log);
+          SendStatus(event->Source, getPinStateJSON(SEARCH_PIN_STATE, PLUGIN_ID_019, event->Par1, log, 0));
+        }
+
+        if (command == F("pcflongpulse"))
+        {
+          success = true;
+          Plugin_009_Write(event->Par1, event->Par2);
+          setPinState(PLUGIN_ID_019, event->Par1, PIN_MODE_OUTPUT, event->Par2);
+          setSystemTimer(event->Par3 * 1000, PLUGIN_ID_019, event->Par1, !event->Par2, 0);
+          log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" Pulse set for ")) + String(event->Par3) + String(F(" S"));
+          addLog(LOG_LEVEL_INFO, log);
+          SendStatus(event->Source, getPinStateJSON(SEARCH_PIN_STATE, PLUGIN_ID_019, event->Par1, log, 0));
+        }
+
+        if (command == F("status"))
+        {
+          if (parseString(string, 2) == F("pcf"))
           {
-            printWebString += F("PCFGPIO ");
-            printWebString += event->Par1;
-            printWebString += F(" Set to ");
-            printWebString += event->Par2;
-            printWebString += F("<BR>");
+            success = true;
+            String status = "";
+            if (hasPinState(PLUGIN_ID_019, event->Par2))  // has been set as output
+              status = getPinStateJSON(SEARCH_PIN_STATE, PLUGIN_ID_019, event->Par2, dummyString, 0);
+            else
+            {
+              int state = Plugin_019_Read(event->Par2); // report as input
+              if (state != -1)
+                status = getPinStateJSON(NO_SEARCH_PIN_STATE, PLUGIN_ID_019, event->Par2, dummyString, state);
+            }
+            SendStatus(event->Source, status);
           }
         }
+
+        break;
+      }
+
+    case PLUGIN_TIMER_IN:
+      {
+        Plugin_019_Write(event->Par1, event->Par2);
+        setPinState(PLUGIN_ID_019, event->Par1, PIN_MODE_OUTPUT, event->Par2);
         break;
       }
   }

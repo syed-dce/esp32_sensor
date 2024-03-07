@@ -6,7 +6,7 @@
 #define CPLUGIN_ID_008         8
 #define CPLUGIN_NAME_008       "Generic HTTP"
 
-boolean CPlugin_008(byte function, struct EventStruct *event)
+boolean CPlugin_008(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
 
@@ -15,7 +15,6 @@ boolean CPlugin_008(byte function, struct EventStruct *event)
     case CPLUGIN_PROTOCOL_ADD:
       {
         Protocol[++protocolCount].Number = CPLUGIN_ID_008;
-        strcpy_P(Protocol[protocolCount].Name, PSTR(CPLUGIN_NAME_008));
         Protocol[protocolCount].usesMQTT = false;
         Protocol[protocolCount].usesAccount = false;
         Protocol[protocolCount].usesPassword = false;
@@ -23,6 +22,12 @@ boolean CPlugin_008(byte function, struct EventStruct *event)
         break;
       }
 
+    case CPLUGIN_GET_DEVICENAME:
+      {
+        string = F(CPLUGIN_NAME_008);
+        break;
+      }
+      
     case CPLUGIN_PROTOCOL_SEND:
       {
         switch (event->sensorType)
@@ -77,13 +82,9 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned
   char host[20];
   sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
 
-  sprintf_P(log, PSTR("%s%s"), "HTTP : connecting to ", host);
+  sprintf_P(log, PSTR("%s%s using port %u"), "HTTP : connecting to ", host,Settings.ControllerPort);
   addLog(LOG_LEVEL_DEBUG, log);
-  if (printToWeb)
-  {
-    printWebString += log;
-    printWebString += "<BR>";
-  }
+
   // Use WiFiClient class to create TCP connections
   WiFiClient client;
   if (!client.connect(host, Settings.ControllerPort))
@@ -91,10 +92,9 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned
     connectionFailures++;
     strcpy_P(log, PSTR("HTTP : connection failed"));
     addLog(LOG_LEVEL_ERROR, log);
-    if (printToWeb)
-      printWebString += F("connection failed<BR>");
     return false;
   }
+  statusLED(true);
   if (connectionFailures)
     connectionFailures--;
 
@@ -114,11 +114,6 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned
 
   url.toCharArray(log, 80);
   addLog(LOG_LEVEL_DEBUG_MORE, log);
-  if (printToWeb)
-  {
-    printWebString += log;
-    printWebString += "<BR>";
-  }
 
   // This will send the request to the server
   client.print(String("GET ") + url + " HTTP/1.1\r\n" +
@@ -138,16 +133,12 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned
     {
       strcpy_P(log, PSTR("HTTP : Succes!"));
       addLog(LOG_LEVEL_DEBUG, log);
-      if (printToWeb)
-        printWebString += F("Success<BR>");
       success = true;
     }
     delay(1);
   }
   strcpy_P(log, PSTR("HTTP : closing connection"));
   addLog(LOG_LEVEL_DEBUG, log);
-  if (printToWeb)
-    printWebString += F("closing connection<BR>");
 
   client.flush();
   client.stop();

@@ -1,3 +1,238 @@
+/*********************************************************************************************\
+   Parse a string and get the xth command or parameter
+  \*********************************************************************************************/
+String parseString(String& string, byte indexFind)
+{
+  String tmpString = string;
+  tmpString += ",";
+  tmpString.replace(" ", ",");
+  String locateString = "";
+  byte count = 0;
+  int index = tmpString.indexOf(',');
+  while (index > 0)
+  {
+    count++;
+    locateString = tmpString.substring(0, index);
+    tmpString = tmpString.substring(index + 1);
+    index = tmpString.indexOf(',');
+    if (count == indexFind)
+    {
+      locateString.toLowerCase();
+      return locateString;
+    }
+  }
+  return "";
+}
+
+
+/*********************************************************************************************\
+   set pin mode & state (info table)
+  \*********************************************************************************************/
+boolean setPinState(byte plugin, byte index, byte mode, uint16_t value)
+{
+  // plugin number and index form a unique key
+  // first check if this pin is already known
+  boolean reUse = false;
+  for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
+    if ((pinStates[x].plugin == plugin) && (pinStates[x].index == index))
+    {
+      pinStates[x].mode = mode;
+      pinStates[x].value = value;
+      reUse = true;
+      break;
+    }
+
+  if (!reUse)
+  {
+    for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
+      if (pinStates[x].plugin == 0)
+      {
+        pinStates[x].plugin = plugin;
+        pinStates[x].index = index;
+        pinStates[x].mode = mode;
+        pinStates[x].value = value;
+        break;
+      }
+  }
+}
+
+
+/*********************************************************************************************\
+   get pin mode & state (info table)
+  \*********************************************************************************************/
+boolean getPinState(byte plugin, byte index, byte *mode, uint16_t *value)
+{
+  for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
+    if ((pinStates[x].plugin == plugin) && (pinStates[x].index == index))
+    {
+      *mode = pinStates[x].mode;
+      *value = pinStates[x].value;
+      return true;
+    }
+  return false;
+}
+
+
+/*********************************************************************************************\
+   check if pin mode & state is known (info table)
+  \*********************************************************************************************/
+boolean hasPinState(byte plugin, byte index)
+{
+  for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
+    if ((pinStates[x].plugin == plugin) && (pinStates[x].index == index))
+    {
+      return true;
+    }
+  return false;
+}
+
+
+/*********************************************************************************************\
+   report pin mode & state (info table) using json
+  \*********************************************************************************************/
+String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uint16_t noSearchValue)
+{
+  printToWebJSON = true;
+  byte mode = PIN_MODE_INPUT;
+  uint16_t value = noSearchValue;
+  String reply = "";
+  boolean found = false;
+
+  if (search)
+  {
+    for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
+      if ((pinStates[x].plugin == plugin) && (pinStates[x].index == index))
+      {
+        mode = pinStates[x].mode;
+        value = pinStates[x].value;
+        found = true;
+        break;
+      }
+  }
+
+  if (!search || (search && found))
+  {
+    reply += F("{\n\"log\": \"");
+    reply += log.substring(7, 32); // truncate to 25 chars, max MQTT message size = 128 including header...
+    reply += F("\",\n\"plugin\": ");
+    reply += plugin;
+    reply += F(",\n\"pin\": ");
+    reply += index;
+    reply += F(",\n\"mode\": \"");
+    switch (mode)
+    {
+      case PIN_MODE_UNDEFINED:
+        reply += F("undefined");
+        break;
+      case PIN_MODE_INPUT:
+        reply += F("input");
+        break;
+      case PIN_MODE_OUTPUT:
+        reply += F("output");
+        break;
+      case PIN_MODE_PWM:
+        reply += F("PWM");
+        break;
+      case PIN_MODE_SERVO:
+        reply += F("servo");
+        break;
+    }
+    reply += F("\",\n\"state\": ");
+    reply += value;
+    reply += F("\n}\n");
+    return reply;
+  }
+  return "?";
+}
+
+
+/********************************************************************************************\
+  Unsigned long Timer timeOut check
+  \*********************************************************************************************/
+
+boolean timeOut(unsigned long timer)
+{
+  // This routine solves the 49 day bug without the need for separate start time and duration
+  //   that would need two 32 bit variables if duration is not static
+  // It limits the maximum delay to 24.9 days.
+
+  unsigned long now = millis();
+  if (((now >= timer) && ((now - timer) < 1 << 31))  || ((timer >= now) && (timer - now > 1 << 31)))
+    return true;
+
+  return false;
+}
+
+
+/********************************************************************************************\
+  Status LED
+  \*********************************************************************************************/
+void statusLED(boolean traffic)
+{
+  if (Settings.Pin_status_led == -1)
+    return;
+
+  static unsigned long timer = 0;
+  static byte currentState = 0;
+
+  if (traffic)
+  {
+    currentState = HIGH;
+    digitalWrite(Settings.Pin_status_led, currentState); // blink off
+    timer = millis() + 100;
+  }
+
+  if (timer == 0 || millis() > timer)
+  {
+    timer = 0;
+    byte state = HIGH;
+    if (WiFi.status() == WL_CONNECTED)
+      state = LOW;
+
+    if (currentState != state)
+    {
+      currentState = state;
+      pinMode(Settings.Pin_status_led, OUTPUT);
+      digitalWrite(Settings.Pin_status_led, state);
+    }
+  }
+}
+
+
+/********************************************************************************************\
+  delay in milliseconds with background processing
+  \*********************************************************************************************/
+void delayMillis(unsigned long delay)
+{
+  unsigned long timer = millis() + delay;
+  while (millis() < timer)
+    backgroundtasks();
+}
+
+
+/********************************************************************************************\
+  Parse a command string to event struct
+  \*********************************************************************************************/
+void parseCommandString(struct EventStruct *event, String& string)
+{
+  char command[80];
+  command[0] = 0;
+  char TmpStr1[80];
+  TmpStr1[0] = 0;
+
+  string.toCharArray(command, 80);
+  event->Par1 = 0;
+  event->Par2 = 0;
+  event->Par3 = 0;
+
+  if (GetArgv(command, TmpStr1, 2)) event->Par1 = str2int(TmpStr1);
+  if (GetArgv(command, TmpStr1, 3)) event->Par2 = str2int(TmpStr1);
+  if (GetArgv(command, TmpStr1, 4)) event->Par3 = str2int(TmpStr1);
+}
+
+/********************************************************************************************\
+  Clear task settings for given task
+  \*********************************************************************************************/
 void taskClear(byte taskIndex, boolean save)
 {
   Settings.TaskDeviceNumber[taskIndex] = 0;
@@ -10,6 +245,7 @@ void taskClear(byte taskIndex, boolean save)
   Settings.TaskDevicePort[taskIndex] = 0;
   Settings.TaskDeviceSendData[taskIndex] = true;
   Settings.TaskDeviceGlobalSync[taskIndex] = false;
+  Settings.TaskDeviceTimer[taskIndex] = Settings.Delay;
 
   for (byte x = 0; x < PLUGIN_CONFIGVAR_MAX; x++)
     Settings.TaskDevicePluginConfig[taskIndex][x] = 0;
@@ -26,6 +262,10 @@ void taskClear(byte taskIndex, boolean save)
   }
 }
 
+
+/********************************************************************************************\
+  Use DNS to resolve hostname to ip address
+  \*********************************************************************************************/
 void getIPfromHostName()
 {
   IPAddress IP;
@@ -37,6 +277,10 @@ void getIPfromHostName()
   }
 }
 
+
+/********************************************************************************************\
+  Fix stuff to clear out differences between releases
+  \*********************************************************************************************/
 void BuildFixes()
 {
   Serial.println(F("\nBuild changed!"));
@@ -57,6 +301,25 @@ void BuildFixes()
     for (byte x = 0; x < TASKS_MAX; x++)
     {
       Settings.TaskDevicePin3[x] = -1;
+    }
+  }
+
+  if (Settings.Build < 79)
+  {
+    Serial.println(F("Fix status LED Pin"));
+    Settings.Pin_status_led = -1;
+    Settings.UseSerial = true;
+    for (byte x = 0; x < TASKS_MAX; x++)
+      Settings.TaskDeviceTimer[x] = Settings.Delay;
+  }
+
+  if (Settings.Build < 83)
+  {
+    Serial.println(F("Fix taskindex"));
+    for (byte x = 0; x < TASKS_MAX; x++)
+    {
+      LoadTaskSettings(x);
+      SaveTaskSettings(x);
     }
   }
 
@@ -105,8 +368,8 @@ void fileSystemCheck()
 
 
 /********************************************************************************************\
-* Find device index corresponding to task number setting
-\*********************************************************************************************/
+  Find device index corresponding to task number setting
+  \*********************************************************************************************/
 byte getDeviceIndex(byte Number)
 {
   byte DeviceIndex = 0;
@@ -118,8 +381,8 @@ byte getDeviceIndex(byte Number)
 
 
 /********************************************************************************************\
-* Find protocol index corresponding to protocol setting
-\*********************************************************************************************/
+  Find protocol index corresponding to protocol setting
+  \*********************************************************************************************/
 byte getProtocolIndex(byte Number)
 {
   byte ProtocolIndex = 0;
@@ -131,8 +394,8 @@ byte getProtocolIndex(byte Number)
 
 
 /********************************************************************************************\
-* Find positional parameter in a char string
-\*********************************************************************************************/
+  Find positional parameter in a char string
+  \*********************************************************************************************/
 boolean GetArgv(const char *string, char *argv, int argc)
 {
   int string_pos = 0, argv_pos = 0, argc_pos = 0;
@@ -175,8 +438,8 @@ boolean GetArgv(const char *string, char *argv, int argc)
 
 
 /********************************************************************************************\
-* Convert a char string to integer
-\*********************************************************************************************/
+  Convert a char string to integer
+  \*********************************************************************************************/
 unsigned long str2int(char *string)
 {
   unsigned long temp = atof(string);
@@ -185,8 +448,8 @@ unsigned long str2int(char *string)
 
 
 /********************************************************************************************\
-* Convert a char string to IP byte array
-\*********************************************************************************************/
+  Convert a char string to IP byte array
+  \*********************************************************************************************/
 boolean str2ip(char *string, byte* IP)
 {
   byte c;
@@ -222,8 +485,8 @@ boolean str2ip(char *string, byte* IP)
 
 
 /********************************************************************************************\
-* Save settings to SPIFFS
-\*********************************************************************************************/
+  Save settings to SPIFFS
+  \*********************************************************************************************/
 void SaveSettings(void)
 {
 #if FEATURE_SPIFFS
@@ -237,8 +500,8 @@ void SaveSettings(void)
 
 
 /********************************************************************************************\
-* Load settings from SPIFFS
-\*********************************************************************************************/
+  Load settings from SPIFFS
+  \*********************************************************************************************/
 boolean LoadSettings()
 {
 #if FEATURE_SPIFFS
@@ -252,10 +515,11 @@ boolean LoadSettings()
 
 
 /********************************************************************************************\
-* Save Task settings to SPIFFS
-\*********************************************************************************************/
+  Save Task settings to SPIFFS
+  \*********************************************************************************************/
 void SaveTaskSettings(byte TaskIndex)
 {
+  ExtraTaskSettings.TaskIndex = TaskIndex;
 #if FEATURE_SPIFFS
   SaveToFile((char*)"config.txt", 4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings, sizeof(struct ExtraTaskSettingsStruct));
 #else
@@ -265,15 +529,15 @@ void SaveTaskSettings(byte TaskIndex)
 
 
 /********************************************************************************************\
-* Load Task settings from SPIFFS
-\*********************************************************************************************/
+  Load Task settings from SPIFFS
+  \*********************************************************************************************/
 void LoadTaskSettings(byte TaskIndex)
 {
-#if FEATURE_SPIFFS
   if (ExtraTaskSettings.TaskIndex == TaskIndex)
     return;
+
+#if FEATURE_SPIFFS
   LoadFromFile((char*)"config.txt", 4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings, sizeof(struct ExtraTaskSettingsStruct));
-  ExtraTaskSettings.TaskIndex = TaskIndex; // store active index
 #else
   LoadFromFlash(4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings, sizeof(struct ExtraTaskSettingsStruct));
 #endif
@@ -281,8 +545,8 @@ void LoadTaskSettings(byte TaskIndex)
 
 
 /********************************************************************************************\
-* Save Custom Task settings to SPIFFS
-\*********************************************************************************************/
+  Save Custom Task settings to SPIFFS
+  \*********************************************************************************************/
 void SaveCustomTaskSettings(int TaskIndex, byte* memAddress, int datasize)
 {
   if (datasize > 512)
@@ -296,8 +560,8 @@ void SaveCustomTaskSettings(int TaskIndex, byte* memAddress, int datasize)
 
 
 /********************************************************************************************\
-* Save Custom Task settings to SPIFFS
-\*********************************************************************************************/
+  Save Custom Task settings to SPIFFS
+  \*********************************************************************************************/
 void LoadCustomTaskSettings(int TaskIndex, byte* memAddress, int datasize)
 {
   if (datasize > 512)
@@ -312,8 +576,8 @@ void LoadCustomTaskSettings(int TaskIndex, byte* memAddress, int datasize)
 
 #if FEATURE_SPIFFS
 /********************************************************************************************\
-* Save data into config file on SPIFFS
-\*********************************************************************************************/
+  Save data into config file on SPIFFS
+  \*********************************************************************************************/
 void SaveToFile(char* fname, int index, byte* memAddress, int datasize)
 {
   File f = SPIFFS.open(fname, "r+");
@@ -334,8 +598,8 @@ void SaveToFile(char* fname, int index, byte* memAddress, int datasize)
 
 
 /********************************************************************************************\
-* Load data from config file on SPIFFS
-\*********************************************************************************************/
+  Load data from config file on SPIFFS
+  \*********************************************************************************************/
 void LoadFromFile(char* fname, int index, byte* memAddress, int datasize)
 {
   File f = SPIFFS.open(fname, "r+");
@@ -355,17 +619,8 @@ void LoadFromFile(char* fname, int index, byte* memAddress, int datasize)
 
 
 /********************************************************************************************\
-* Save data to flash
-\*********************************************************************************************/
-#define FLASH_EEPROM_SIZE 4096
-extern "C" {
-#include "spi_flash.h"
-}
-extern "C" uint32_t _SPIFFS_start;
-extern "C" uint32_t _SPIFFS_end;
-extern "C" uint32_t _SPIFFS_page;
-extern "C" uint32_t _SPIFFS_block;
-
+  Save data to flash
+  \*********************************************************************************************/
 void SaveToFlash(int index, byte* memAddress, int datasize)
 {
   if (index > 33791) // Limit usable flash area to 32+1k size
@@ -402,8 +657,8 @@ void SaveToFlash(int index, byte* memAddress, int datasize)
 
 
 /********************************************************************************************\
-* Load data from flash
-\*********************************************************************************************/
+  Load data from flash
+  \*********************************************************************************************/
 void LoadFromFlash(int index, byte* memAddress, int datasize)
 {
   uint32_t _sector = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
@@ -425,8 +680,8 @@ void LoadFromFlash(int index, byte* memAddress, int datasize)
 
 
 /********************************************************************************************\
-* Erase data on flash
-\*********************************************************************************************/
+  Erase data on flash
+  \*********************************************************************************************/
 void ZeroFillFlash()
 {
   // this will fill the SPIFFS area with a 64k block of all zeroes.
@@ -461,8 +716,8 @@ void ZeroFillFlash()
 
 
 /********************************************************************************************\
-* Erase all content on flash (except sketch)
-\*********************************************************************************************/
+  Erase all content on flash (except sketch)
+  \*********************************************************************************************/
 void EraseFlash()
 {
   uint32_t _sectorStart = (ESP.getSketchSize() / SPI_FLASH_SEC_SIZE) + 1;
@@ -484,8 +739,8 @@ void EraseFlash()
 
 
 /********************************************************************************************\
-* Check SPIFFS area settings
-\*********************************************************************************************/
+  Check SPIFFS area settings
+  \*********************************************************************************************/
 int SpiffsSectors()
 {
   uint32_t _sectorStart = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
@@ -495,8 +750,8 @@ int SpiffsSectors()
 
 
 /********************************************************************************************\
-* Check flash chip (beyond sketch size)
-\*********************************************************************************************/
+  Check flash chip (beyond sketch size)
+  \*********************************************************************************************/
 void CheckFlash(int start, int end)
 {
   //uint32_t _sectorStart = (ESP.getSketchSize() / SPI_FLASH_SEC_SIZE) + 1;
@@ -523,9 +778,9 @@ void CheckFlash(int start, int end)
     delay(10);
     noInterrupts();
     //if (spi_flash_erase_sector(_sector) == SPI_FLASH_RESULT_OK)
-      //if (spi_flash_write(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
-        if (spi_flash_read(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
-          success = true;
+    //if (spi_flash_write(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
+    if (spi_flash_read(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
+      success = true;
     interrupts();
     if (success)
       Serial.println(F("OK"));
@@ -537,8 +792,8 @@ void CheckFlash(int start, int end)
 
 
 /********************************************************************************************\
-* Reset all settings to factory defaults
-\*********************************************************************************************/
+  Reset all settings to factory defaults
+  \*********************************************************************************************/
 void ResetFactory(void)
 {
   // Direct Serial is allowed here, since this is only an emergency task.
@@ -611,8 +866,10 @@ void ResetFactory(void)
     Settings.TaskDevicePin1PullUp[x] = true;
     Settings.TaskDevicePin1Inversed[x] = false;
     Settings.TaskDeviceSendData[x] = true;
+    Settings.TaskDeviceTimer[x] = Settings.Delay;
   }
   Settings.Build = BUILD;
+  Settings.UseSerial = true;
   SaveSettings();
   delay(1000);
   WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
@@ -623,8 +880,8 @@ void ResetFactory(void)
 
 
 /********************************************************************************************\
-* If RX and TX tied together, perform emergency reset to get the system out of boot loops
-\*********************************************************************************************/
+  If RX and TX tied together, perform emergency reset to get the system out of boot loops
+  \*********************************************************************************************/
 
 void emergencyReset()
 {
@@ -644,8 +901,8 @@ void emergencyReset()
 
 
 /********************************************************************************************\
-* Get free system mem
-\*********************************************************************************************/
+  Get free system mem
+  \*********************************************************************************************/
 extern "C" {
 #include "user_interface.h"
 }
@@ -657,8 +914,8 @@ unsigned long FreeMem(void)
 
 
 /********************************************************************************************\
-* In memory convert float to long
-\*********************************************************************************************/
+  In memory convert float to long
+  \*********************************************************************************************/
 unsigned long float2ul(float f)
 {
   unsigned long ul;
@@ -668,8 +925,8 @@ unsigned long float2ul(float f)
 
 
 /********************************************************************************************\
-* In memory convert long to float
-\*********************************************************************************************/
+  In memory convert long to float
+  \*********************************************************************************************/
 float ul2float(unsigned long ul)
 {
   float f;
@@ -679,8 +936,8 @@ float ul2float(unsigned long ul)
 
 
 /********************************************************************************************\
-* Add to log
-\*********************************************************************************************/
+  Add to log
+  \*********************************************************************************************/
 void addLog(byte loglevel, String& string)
 {
   addLog(loglevel, string.c_str());
@@ -688,8 +945,9 @@ void addLog(byte loglevel, String& string)
 
 void addLog(byte loglevel, const char *line)
 {
-  if (loglevel <= Settings.SerialLogLevel)
-    Serial.println(line);
+  if (Settings.UseSerial)
+    if (loglevel <= Settings.SerialLogLevel)
+      Serial.println(line);
 
   if (loglevel <= Settings.SyslogLevel)
     syslog(line);
@@ -706,8 +964,8 @@ void addLog(byte loglevel, const char *line)
 
 
 /********************************************************************************************\
-* Delayed reboot, in case of issues, do not reboot with high frequency as it might not help...
-\*********************************************************************************************/
+  Delayed reboot, in case of issues, do not reboot with high frequency as it might not help...
+  \*********************************************************************************************/
 void delayedReboot(int rebootDelay)
 {
   // Direct Serial is allowed here, since this is only an emergency task.
@@ -723,8 +981,8 @@ void delayedReboot(int rebootDelay)
 
 
 /********************************************************************************************\
-* Save a byte to RTC memory
-\*********************************************************************************************/
+  Save a byte to RTC memory
+  \*********************************************************************************************/
 #define RTC_BASE 65 // system doc says user area starts at 64, but it does not work (?)
 void saveToRTC(byte Par1)
 {
@@ -735,8 +993,8 @@ void saveToRTC(byte Par1)
 
 
 /********************************************************************************************\
-* Read a byte from RTC memory
-\*********************************************************************************************/
+  Read a byte from RTC memory
+  \*********************************************************************************************/
 boolean readFromRTC(byte* data)
 {
   byte buf[3] = {0, 0, 0};
@@ -751,8 +1009,8 @@ boolean readFromRTC(byte* data)
 
 
 /********************************************************************************************\
-* Convert a string like "Sun,12:30" into a 32 bit integer
-\*********************************************************************************************/
+  Convert a string like "Sun,12:30" into a 32 bit integer
+  \*********************************************************************************************/
 unsigned long string2TimeLong(String &str)
 {
   // format 0000WWWWAAAABBBBCCCCDDDD
@@ -803,8 +1061,8 @@ unsigned long string2TimeLong(String &str)
 
 
 /********************************************************************************************\
-* Convert  a 32 bit integer into a string like "Sun,12:30"
-\*********************************************************************************************/
+  Convert  a 32 bit integer into a string like "Sun,12:30"
+  \*********************************************************************************************/
 String timeLong2String(unsigned long lngTime)
 {
   unsigned long x = 0;
@@ -905,7 +1163,9 @@ String parseTemplate(String &tmpString, byte lineSize)
                       newString += " ";
                   }
                   newString += String(value);
+                  break;
                 }
+              break;
             }
           }
         }
@@ -947,8 +1207,8 @@ String parseTemplate(String &tmpString, byte lineSize)
 
 
 /********************************************************************************************\
-* Calculate function for simple expressions
-\*********************************************************************************************/
+  Calculate function for simple expressions
+  \*********************************************************************************************/
 #define CALCULATE_OK                            0
 #define CALCULATE_ERROR_STACK_OVERFLOW          1
 #define CALCULATE_ERROR_BAD_OPERATOR            2
@@ -1209,8 +1469,8 @@ int Calculate(const char *input, float* result)
 
 
 /********************************************************************************************\
-* Time stuff
-\*********************************************************************************************/
+  Time stuff
+  \*********************************************************************************************/
 #if FEATURE_TIME
 
 #define SECS_PER_MIN  (60UL)
@@ -1343,6 +1603,21 @@ void checkTime()
   {
     PluginCall(PLUGIN_CLOCK_IN, 0, dummyString);
     PrevMinutes = tm.Minute;
+    if (Settings.UseRules)
+    {
+      String weekDays = F("AllSunMonTueWedThuFriSat");
+      String event = F("Clock#Time=");
+      event += weekDays.substring(weekday() * 3, weekday() * 3 + 3);
+      event += ",";
+      if (hour() < 10)
+        event += "0";
+      event += hour();
+      event += ":";
+      if (minute() < 10)
+        event += "0";
+      event += minute();
+      rulesProcessing(event);
+    }
   }
 }
 
@@ -1408,3 +1683,328 @@ unsigned long getNtpTime()
 }
 #endif
 
+
+/********************************************************************************************\
+  Very Experimental rules processing
+  \*********************************************************************************************/
+void rulesProcessing(String& event)
+{
+  unsigned long timer = micros();
+  String log = "";
+
+  log = F("EVENT: ");
+  log += event;
+  addLog(LOG_LEVEL_INFO, log);
+
+  // load rules from flash memory, stored in offset block 10
+  uint8_t* data = new uint8_t[FLASH_EEPROM_SIZE];
+  uint32_t _sector = ((uint32_t)&_SPIFFS_start - 0x40200000) / SPI_FLASH_SEC_SIZE;
+  _sector += 10;
+  noInterrupts();
+  spi_flash_read(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE);
+  interrupts();
+
+  int pos = 0;
+  String line = "";
+  boolean match = false;
+  boolean codeBlock = false;
+  boolean isCommand = false;
+  boolean conditional = false;
+  boolean condition = false;
+  boolean ifBranche = false;
+
+  while (data[pos] != 0)
+  {
+    if (data[pos] != 0 && data[pos] != 10)
+      line += (char)data[pos];
+
+    if (data[pos] == 10)    // if line complete, parse this rule
+    {
+      line.replace("\r", "");
+      line.trim();
+      line.toLowerCase();
+      if (line.substring(0, 2) != "//" && line.length() > 0)
+      {
+        isCommand = true;
+
+        line = parseTemplate(line, line.length());
+
+        String eventTrigger = "";
+        String action = "";
+
+        if (!codeBlock)  // do not check "on" rules if a block of actions is to be processed
+        {
+          if (line.startsWith("on "))
+          {
+            line.replace("on ", "");
+            int split = line.indexOf(" do");
+            if (split != -1)
+            {
+              eventTrigger = line.substring(0, split);
+              action = line.substring(split + 4);
+              action.trim();
+            }
+            match = ruleMatch(event, eventTrigger);
+            if (action.length() > 0) // single on/do/action line, no block
+            {
+              isCommand = true;
+              codeBlock = false;
+            }
+            else
+            {
+              isCommand = false;
+              codeBlock = true;
+            }
+          }
+        }
+        else
+        {
+          action = line;
+        }
+
+        if (action == "endon") // Check if action block has ended, then we will wait for a new "on" rule
+        {
+          isCommand = false;
+          codeBlock = false;
+        }
+
+        if (match) // rule matched for one action or a block of actions
+        {
+          int split = action.indexOf("if "); // check for optional "if" condition
+          if (split != -1)
+          {
+            conditional = true;
+            String check = action.substring(split + 3);
+            condition = conditionMatch(check);
+            ifBranche = true;
+            isCommand = false;
+          }
+
+          if (action == "else") // in case of an "else" block of actions, set ifBranche to false
+          {
+            ifBranche = false;
+            isCommand = false;
+          }
+
+          if (action == "endif") // conditional block ends here
+          {
+            conditional = false;
+            isCommand = false;
+          }
+
+          // process the action if it's a command and unconditional, or conditional and the condition matches the if or else block.
+          if (isCommand && ((!conditional) || (conditional && (condition == ifBranche))))
+          {
+            log = F("ACT  : ");
+            log += action;
+            addLog(LOG_LEVEL_INFO, log);
+
+            struct EventStruct TempEvent;
+            parseCommandString(&TempEvent, action);
+            if (!PluginCall(PLUGIN_WRITE, &TempEvent, action))
+              ExecuteCommand(VALUE_SOURCE_SYSTEM, action.c_str());
+          }
+        }
+      }
+
+      line = "";
+    }
+    pos++;
+  }
+  delete [] data;
+  timer = micros() - timer;
+  //Serial.println(timer);
+}
+
+
+/********************************************************************************************\
+  Check if an event matches to a given rule
+  \*********************************************************************************************/
+boolean ruleMatch(String& event, String& rule)
+{
+  boolean match = false;
+  String tmpEvent = event;
+  String tmpRule = rule;
+
+  // parse event into verb and value
+  float value = 0;
+  int pos = event.indexOf("=");
+  if (pos)
+  {
+    tmpEvent = event.substring(pos + 1);
+    value = tmpEvent.toFloat();
+    tmpEvent = event.substring(0, pos);
+  }
+
+  // parse rule
+  int comparePos = 0;
+  char compare = ' ';
+  comparePos = rule.indexOf(">");
+  if (comparePos > 0)
+  {
+    compare = '>';
+  }
+  else
+  {
+    comparePos = rule.indexOf("<");
+    if (comparePos > 0)
+    {
+      compare = '<';
+    }
+    else
+    {
+      comparePos = rule.indexOf("=");
+      if (comparePos > 0)
+      {
+        compare = '=';
+      }
+    }
+  }
+
+  float ruleValue = 0;
+
+  if (comparePos > 0)
+  {
+    tmpRule = rule.substring(comparePos + 1);
+    ruleValue = tmpRule.toFloat();
+    tmpRule = rule.substring(0, comparePos);
+  }
+
+  switch (compare)
+  {
+    case '>':
+      if (tmpRule.equalsIgnoreCase(tmpEvent) && value > ruleValue)
+        match = true;
+      break;
+
+    case '<':
+      if (tmpRule.equalsIgnoreCase(tmpEvent) && value < ruleValue)
+        match = true;
+      break;
+
+    case '=':
+      if (tmpRule.equalsIgnoreCase(tmpEvent) && value == ruleValue)
+        match = true;
+      break;
+
+    case ' ':
+      if (tmpRule.equalsIgnoreCase(tmpEvent))
+        match = true;
+      break;
+  }
+
+  return match;
+}
+
+
+/********************************************************************************************\
+  Check expression
+  \*********************************************************************************************/
+boolean conditionMatch(String& check)
+{
+  boolean match = false;
+
+  int comparePos = 0;
+  char compare = ' ';
+  comparePos = check.indexOf(">");
+  if (comparePos > 0)
+  {
+    compare = '>';
+  }
+  else
+  {
+    comparePos = check.indexOf("<");
+    if (comparePos > 0)
+    {
+      compare = '<';
+    }
+    else
+    {
+      comparePos = check.indexOf("=");
+      if (comparePos > 0)
+      {
+        compare = '=';
+      }
+    }
+  }
+
+  float Value1 = 0;
+  float Value2 = 0;
+
+  if (comparePos > 0)
+  {
+    String tmpCheck = check.substring(comparePos + 1);
+    Value2 = tmpCheck.toFloat();
+    tmpCheck = check.substring(0, comparePos);
+    Value1 = tmpCheck.toFloat();
+  }
+  else
+    return false;
+
+  switch (compare)
+  {
+    case '>':
+      if (Value1 > Value2)
+        match = true;
+      break;
+
+    case '<':
+      if (Value1 < Value2)
+        match = true;
+      break;
+
+    case '=':
+      if (Value1 == Value2)
+        match = true;
+      break;
+  }
+  return match;
+}
+
+
+/********************************************************************************************\
+  Check rule timers
+  \*********************************************************************************************/
+void rulesTimers()
+{
+  for (byte x = 0; x < RULES_TIMER_MAX; x++)
+  {
+    if (RulesTimer[x] != 0L) // timer active?
+    {
+      if (RulesTimer[x] < millis()) // timer finished?
+      {
+        RulesTimer[x] = 0L; // turn off this timer
+        String event = F("Rules#Timer=");
+        event += x + 1;
+        rulesProcessing(event);
+      }
+    }
+  }
+}
+
+
+/********************************************************************************************\
+  Generate rule events based on task refresh
+  \*********************************************************************************************/
+
+void createRuleEvents(byte TaskIndex)
+{
+  LoadTaskSettings(TaskIndex);
+  byte BaseVarIndex = TaskIndex * VARS_PER_TASK;
+  byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
+  byte sensorType = Device[DeviceIndex].VType;
+  for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
+  {
+    String eventString = ExtraTaskSettings.TaskDeviceName;
+    eventString += F("#");
+    eventString += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+    eventString += F("=");
+
+    if (sensorType == SENSOR_TYPE_LONG)
+      eventString += (unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16);
+    else
+      eventString += UserVar[BaseVarIndex + varNr];
+
+    rulesProcessing(eventString);
+  }
+}

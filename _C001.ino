@@ -6,7 +6,7 @@
 #define CPLUGIN_ID_001         1
 #define CPLUGIN_NAME_001       "Domoticz HTTP"
 
-boolean CPlugin_001(byte function, struct EventStruct *event)
+boolean CPlugin_001(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
 
@@ -15,28 +15,46 @@ boolean CPlugin_001(byte function, struct EventStruct *event)
     case CPLUGIN_PROTOCOL_ADD:
       {
         Protocol[++protocolCount].Number = CPLUGIN_ID_001;
-        strcpy_P(Protocol[protocolCount].Name, PSTR(CPLUGIN_NAME_001));
         Protocol[protocolCount].usesMQTT = false;
-        Protocol[protocolCount].usesAccount = false;
-        Protocol[protocolCount].usesPassword = false;
+        #if ESP_CORE >= 210
+          Protocol[protocolCount].usesAccount = true;
+          Protocol[protocolCount].usesPassword = true;
+        #else
+          Protocol[protocolCount].usesAccount = false;
+          Protocol[protocolCount].usesPassword = false;
+        #endif
         Protocol[protocolCount].defaultPort = 8080;
         break;
       }
 
+    case CPLUGIN_GET_DEVICENAME:
+      {
+        string = F(CPLUGIN_NAME_001);
+        break;
+      }
+      
     case CPLUGIN_PROTOCOL_SEND:
       {
+        String authHeader = "";
+        #if ESP_CORE >= 210
+        if ((SecuritySettings.ControllerUser[0] != 0) && (SecuritySettings.ControllerPassword[0] != 0))
+        {
+          base64 encoder;
+          String auth = SecuritySettings.ControllerUser;
+          auth += ":";
+          auth += SecuritySettings.ControllerPassword;
+          authHeader = "Authorization: Basic " + encoder.encode(auth) + " \r\n";
+        }
+        #endif
+        
         char log[80];
         boolean success = false;
         char host[20];
         sprintf_P(host, PSTR("%u.%u.%u.%u"), Settings.Controller_IP[0], Settings.Controller_IP[1], Settings.Controller_IP[2], Settings.Controller_IP[3]);
 
-        sprintf_P(log, PSTR("%s%s"), "HTTP : connecting to ", host);
+        sprintf_P(log, PSTR("%s%s using port %u"), "HTTP : connecting to ", host,Settings.ControllerPort);
         addLog(LOG_LEVEL_DEBUG, log);
-        if (printToWeb)
-        {
-          printWebString += log;
-          printWebString += "<BR>";
-        }
+
         // Use WiFiClient class to create TCP connections
         WiFiClient client;
         if (!client.connect(host, Settings.ControllerPort))
@@ -44,10 +62,9 @@ boolean CPlugin_001(byte function, struct EventStruct *event)
           connectionFailures++;
           strcpy_P(log, PSTR("HTTP : connection failed"));
           addLog(LOG_LEVEL_ERROR, log);
-          if (printToWeb)
-            printWebString += F("connection failed<BR>");
           return false;
         }
+        statusLED(true);
         if (connectionFailures)
           connectionFailures--;
 
@@ -113,15 +130,10 @@ boolean CPlugin_001(byte function, struct EventStruct *event)
 
         url.toCharArray(log, 80);
         addLog(LOG_LEVEL_DEBUG_MORE, log);
-        if (printToWeb)
-        {
-          printWebString += log;
-          printWebString += "<BR>";
-        }
 
         // This will send the request to the server
         client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-                     "Host: " + host + "\r\n" +
+                     "Host: " + host + "\r\n" + authHeader + 
                      "Connection: close\r\n\r\n");
 
         unsigned long timer = millis() + 200;
@@ -137,16 +149,12 @@ boolean CPlugin_001(byte function, struct EventStruct *event)
           {
             strcpy_P(log, PSTR("HTTP : Succes!"));
             addLog(LOG_LEVEL_DEBUG, log);
-            if (printToWeb)
-              printWebString += F("Success<BR>");
             success = true;
           }
           delay(1);
         }
         strcpy_P(log, PSTR("HTTP : closing connection"));
         addLog(LOG_LEVEL_DEBUG, log);
-        if (printToWeb)
-          printWebString += F("closing connection<BR>");
 
         client.flush();
         client.stop();
