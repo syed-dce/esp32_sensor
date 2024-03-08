@@ -28,6 +28,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         Device[deviceCount].ValueCount = 1;
         Device[deviceCount].SendDataOption = true;
         Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
         break;
       }
 
@@ -88,7 +89,6 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         byte devCount = Plugin_004_DS_scan(Settings.TaskDevicePluginConfig[event->TaskIndex][0], addr);
         for (byte x=0; x < 8; x++)
           ExtraTaskSettings.TaskDevicePluginConfigLong[x] = addr[x];
-        SaveTaskSettings(event->TaskIndex);
         success = true;
         break;
       }

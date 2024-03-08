@@ -1,4 +1,14 @@
 /*********************************************************************************************\
+   Workaround for removing trailing white space when String() converts a float with 0 decimals
+\*********************************************************************************************/
+String toString(float value, byte decimals)
+{
+  String sValue = String(value, decimals);
+  sValue.trim();
+  return sValue;
+}
+
+/*********************************************************************************************\
    Parse a string and get the xth command or parameter
   \*********************************************************************************************/
 String parseString(String& string, byte indexFind)
@@ -245,7 +255,7 @@ void taskClear(byte taskIndex, boolean save)
   Settings.TaskDevicePort[taskIndex] = 0;
   Settings.TaskDeviceSendData[taskIndex] = true;
   Settings.TaskDeviceGlobalSync[taskIndex] = false;
-  Settings.TaskDeviceTimer[taskIndex] = Settings.Delay;
+  Settings.TaskDeviceTimer[taskIndex] = 0;
 
   for (byte x = 0; x < PLUGIN_CONFIGVAR_MAX; x++)
     Settings.TaskDevicePluginConfig[taskIndex][x] = 0;
@@ -254,7 +264,12 @@ void taskClear(byte taskIndex, boolean save)
   {
     ExtraTaskSettings.TaskDeviceFormula[varNr][0] = 0;
     ExtraTaskSettings.TaskDeviceValueNames[varNr][0] = 0;
+    ExtraTaskSettings.TaskDeviceValueDecimals[varNr] = 2;
   }
+
+  for (byte varNr = 0; varNr < PLUGIN_EXTRACONFIGVAR_MAX; varNr++)
+    ExtraTaskSettings.TaskDevicePluginConfigLong[varNr] = 0;
+  
   if (save)
   {
     SaveTaskSettings(taskIndex);
@@ -320,6 +335,39 @@ void BuildFixes()
     {
       LoadTaskSettings(x);
       SaveTaskSettings(x);
+    }
+  }
+
+  if (Settings.Build < 88)
+  {
+    struct ExtraTaskSettingsStruct_old
+    {
+      byte    TaskIndex;
+      char    TaskDeviceName[26];
+      char    TaskDeviceFormula[VARS_PER_TASK][41];
+      char    TaskDeviceValueNames[VARS_PER_TASK][26];
+      long    TaskDevicePluginConfigLong[PLUGIN_EXTRACONFIGVAR_MAX];
+      byte    TaskDeviceValueDecimals[VARS_PER_TASK];
+    } ExtraTaskSettings_old;
+
+    Serial.println(F("Fix extratasksettings"));
+    for (byte TaskIndex = 0; TaskIndex < TASKS_MAX; TaskIndex++)
+    {
+      LoadFromFlash(4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings_old, sizeof(struct ExtraTaskSettingsStruct_old));
+
+      ExtraTaskSettings.TaskIndex = ExtraTaskSettings_old.TaskIndex;
+      strcpy(ExtraTaskSettings.TaskDeviceName, ExtraTaskSettings_old.TaskDeviceName);
+      for (byte x = 0; x < VARS_PER_TASK; x++)
+      {
+        strcpy(ExtraTaskSettings.TaskDeviceFormula[x], ExtraTaskSettings_old.TaskDeviceFormula[x]);
+        strcpy(ExtraTaskSettings.TaskDeviceValueNames[x], ExtraTaskSettings_old.TaskDeviceValueNames[x]);
+        ExtraTaskSettings.TaskDeviceValueDecimals[x] = 2;
+      }
+      for (byte x = 0; x < PLUGIN_EXTRACONFIGVAR_MAX; x++)
+      {
+        ExtraTaskSettings.TaskDevicePluginConfigLong[x] = ExtraTaskSettings_old.TaskDevicePluginConfigLong[x];
+      }
+      SaveToFlash(4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings, sizeof(struct ExtraTaskSettingsStruct));
     }
   }
 
@@ -541,6 +589,7 @@ void LoadTaskSettings(byte TaskIndex)
 #else
   LoadFromFlash(4096 + (TaskIndex * 1024), (byte*)&ExtraTaskSettings, sizeof(struct ExtraTaskSettingsStruct));
 #endif
+  ExtraTaskSettings.TaskIndex = TaskIndex; // Needed when an empty task was requested
 }
 
 
@@ -750,48 +799,6 @@ int SpiffsSectors()
 
 
 /********************************************************************************************\
-  Check flash chip (beyond sketch size)
-  \*********************************************************************************************/
-void CheckFlash(int start, int end)
-{
-  //uint32_t _sectorStart = (ESP.getSketchSize() / SPI_FLASH_SEC_SIZE) + 1;
-  //uint32_t _sectorEnd = _sectorStart + (ESP.getFlashChipRealSize() / SPI_FLASH_SEC_SIZE);
-
-  uint32_t _sectorStart = start;
-  uint32_t _sectorEnd = end;
-
-  uint8_t* data = new uint8_t[FLASH_EEPROM_SIZE];
-
-  uint8_t* tmpdata = data;
-  for (int x = 0; x < FLASH_EEPROM_SIZE; x++)
-  {
-    *tmpdata = 0xA5;
-    tmpdata++;
-  }
-
-  for (uint32_t _sector = _sectorStart; _sector < _sectorEnd; _sector++)
-  {
-    boolean success = 0;
-    Serial.print(F("FLASH: Verify Sector: "));
-    Serial.print(_sector);
-    Serial.print(F(" : "));
-    delay(10);
-    noInterrupts();
-    //if (spi_flash_erase_sector(_sector) == SPI_FLASH_RESULT_OK)
-    //if (spi_flash_write(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
-    if (spi_flash_read(_sector * SPI_FLASH_SEC_SIZE, reinterpret_cast<uint32_t*>(data), FLASH_EEPROM_SIZE) == SPI_FLASH_RESULT_OK)
-      success = true;
-    interrupts();
-    if (success)
-      Serial.println(F("OK"));
-    else
-      Serial.println(F("Fail"));
-  }
-  delete [] data;
-}
-
-
-/********************************************************************************************\
   Reset all settings to factory defaults
   \*********************************************************************************************/
 void ResetFactory(void)
@@ -850,6 +857,7 @@ void ResetFactory(void)
   Settings.Delay           = DEFAULT_DELAY;
   Settings.Pin_i2c_sda     = 4;
   Settings.Pin_i2c_scl     = 5;
+  Settings.Pin_status_led  = -1;
   Settings.Protocol        = DEFAULT_PROTOCOL;
   strcpy_P(Settings.Name, PSTR(DEFAULT_NAME));
   Settings.SerialLogLevel  = 2;
@@ -903,10 +911,6 @@ void emergencyReset()
 /********************************************************************************************\
   Get free system mem
   \*********************************************************************************************/
-extern "C" {
-#include "user_interface.h"
-}
-
 unsigned long FreeMem(void)
 {
   return system_get_free_heap_size();
@@ -1020,13 +1024,14 @@ unsigned long string2TimeLong(String &str)
   char TmpStr1[10];
   int w, x, y;
   unsigned long a;
+  str.toLowerCase();
   str.toCharArray(command, 20);
   unsigned long lngTime;
 
   if (GetArgv(command, TmpStr1, 1))
   {
     String day = TmpStr1;
-    String weekDays = F("AllSunMonTueWedThuFriSat");
+    String weekDays = F("allsunmontuewedthufrisat");
     y = weekDays.indexOf(TmpStr1) / 3;
     if (y == 0)
       y = 0xf; // wildcard is 0xf
@@ -1155,7 +1160,7 @@ String parseTemplate(String &tmpString, byte lineSize)
                 if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
                 {
                   // here we know the task and value, so find the uservar
-                  String value = String(UserVar[y * VARS_PER_TASK + z]);
+                  String value = toString(UserVar[y * VARS_PER_TASK + z], ExtraTaskSettings.TaskDeviceValueDecimals[z]);
                   if (valueFormat == "R")
                   {
                     int filler = lineSize - newString.length() - value.length() - tmpString.length() ;
@@ -1722,12 +1727,18 @@ void rulesProcessing(String& event)
     {
       line.replace("\r", "");
       line.trim();
-      line.toLowerCase();
       if (line.substring(0, 2) != "//" && line.length() > 0)
       {
         isCommand = true;
 
+        int comment = line.indexOf("//");
+        if (comment > 0)
+          line = line.substring(0, comment);
+          
         line = parseTemplate(line, line.length());
+
+        String lineOrg = line; // store original line for future use
+        line.toLowerCase(); // convert all to lower case to make checks easier
 
         String eventTrigger = "";
         String action = "";
@@ -1741,7 +1752,7 @@ void rulesProcessing(String& event)
             if (split != -1)
             {
               eventTrigger = line.substring(0, split);
-              action = line.substring(split + 4);
+              action = lineOrg.substring(split + 7);
               action.trim();
             }
             match = ruleMatch(event, eventTrigger);
@@ -1759,10 +1770,12 @@ void rulesProcessing(String& event)
         }
         else
         {
-          action = line;
+          action = lineOrg;
         }
 
-        if (action == "endon") // Check if action block has ended, then we will wait for a new "on" rule
+        String lcAction = action;
+        lcAction.toLowerCase();
+        if (lcAction == "endon") // Check if action block has ended, then we will wait for a new "on" rule
         {
           isCommand = false;
           codeBlock = false;
@@ -1770,23 +1783,23 @@ void rulesProcessing(String& event)
 
         if (match) // rule matched for one action or a block of actions
         {
-          int split = action.indexOf("if "); // check for optional "if" condition
+          int split = lcAction.indexOf("if "); // check for optional "if" condition
           if (split != -1)
           {
             conditional = true;
-            String check = action.substring(split + 3);
+            String check = lcAction.substring(split + 3);
             condition = conditionMatch(check);
             ifBranche = true;
             isCommand = false;
           }
 
-          if (action == "else") // in case of an "else" block of actions, set ifBranche to false
+          if (lcAction == "else") // in case of an "else" block of actions, set ifBranche to false
           {
             ifBranche = false;
             isCommand = false;
           }
 
-          if (action == "endif") // conditional block ends here
+          if (lcAction == "endif") // conditional block ends here
           {
             conditional = false;
             isCommand = false;
@@ -1825,6 +1838,39 @@ boolean ruleMatch(String& event, String& rule)
   boolean match = false;
   String tmpEvent = event;
   String tmpRule = rule;
+
+  if (event.startsWith("Clock#Time")) // clock events need different handling...
+  {
+    int pos1 = event.indexOf("=");
+    int pos2 = rule.indexOf("=");
+    if (pos1 > 0 && pos2 > 0)
+    {
+      tmpEvent = event.substring(0,pos1);
+      tmpRule  = rule.substring(0,pos2);
+      if (tmpRule.equalsIgnoreCase(tmpEvent)) // if this is a clock rule
+      { 
+        tmpEvent = event.substring(pos1 + 1);
+        tmpRule  = rule.substring(pos2 + 1);
+        unsigned long clockEvent = string2TimeLong(tmpEvent);
+        unsigned long clockSet = string2TimeLong(tmpRule);
+        unsigned long Mask;
+        for (byte y = 0; y < 8; y++)
+          {
+          if (((clockSet >> (y * 4)) & 0xf) == 0xf)  // if nibble y has the wildcard value 0xf
+            {
+              Mask = 0xffffffff  ^ (0xFUL << (y * 4)); // Mask to wipe nibble position y.
+              clockEvent &= Mask;                      // clear nibble
+              clockEvent |= (0xFUL << (y * 4));        // fill with wildcard value 0xf
+            }
+          }
+        if (clockEvent == clockSet)
+          return true;
+        else
+          return false;
+      }
+    }
+  }
+
 
   // parse event into verb and value
   float value = 0;

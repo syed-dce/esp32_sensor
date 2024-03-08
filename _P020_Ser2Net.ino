@@ -96,7 +96,6 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
         ExtraTaskSettings.TaskDevicePluginConfigLong[3] = plugin4.toInt();
         String plugin5 = WebServer.arg("plugin_020_stop");
         ExtraTaskSettings.TaskDevicePluginConfigLong[4] = plugin5.toInt();
-        SaveTaskSettings(event->TaskIndex);
         success = true;
         break;
       }
@@ -106,7 +105,6 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
         LoadTaskSettings(event->TaskIndex);
         if ((ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0) && (ExtraTaskSettings.TaskDevicePluginConfigLong[1] != 0))
         {
-
           byte serialconfig = 0x10;
           serialconfig += ExtraTaskSettings.TaskDevicePluginConfigLong[3];
           serialconfig += (ExtraTaskSettings.TaskDevicePluginConfigLong[2] - 5) << 2;

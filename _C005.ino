@@ -66,7 +66,12 @@ boolean CPlugin_005(byte function, struct EventStruct *event, String& string)
           TempEvent.Par1 = topicSplit[count].toInt();
           TempEvent.Par2 = event->String2.toFloat();
         }
-        PluginCall(PLUGIN_WRITE, &TempEvent, cmd);
+        // in case of event, store to buffer and return...
+        String command = parseString(cmd, 1);
+        if (command == F("event"))
+          eventBuffer = cmd.substring(6);
+        else
+          PluginCall(PLUGIN_WRITE, &TempEvent, cmd);
         break;
       }
 
@@ -93,7 +98,7 @@ boolean CPlugin_005(byte function, struct EventStruct *event, String& string)
           case SENSOR_TYPE_SWITCH:
           case SENSOR_TYPE_DIMMER:
             pubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[0]);
-            value = String(UserVar[event->BaseVarIndex]);
+            value = toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
             MQTTclient.publish(pubname, value);
             break;
           case SENSOR_TYPE_LONG:
@@ -106,11 +111,11 @@ boolean CPlugin_005(byte function, struct EventStruct *event, String& string)
             {
               String tmppubname = pubname;
               tmppubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[0]);
-              value = String(UserVar[event->BaseVarIndex]);
+              value = toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
               MQTTclient.publish(tmppubname, value);
               tmppubname = pubname;
               tmppubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[1]);
-              value = String(UserVar[event->BaseVarIndex + 1]);
+              value = toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
               MQTTclient.publish(tmppubname, value);
               break;
             }
@@ -118,15 +123,15 @@ boolean CPlugin_005(byte function, struct EventStruct *event, String& string)
             {
               String tmppubname = pubname;
               tmppubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[0]);
-              value = String(UserVar[event->BaseVarIndex]);
+              value = toString(UserVar[event->BaseVarIndex],ExtraTaskSettings.TaskDeviceValueDecimals[0]);
               MQTTclient.publish(tmppubname, value);
               tmppubname = pubname;
               tmppubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[1]);
-              value = String(UserVar[event->BaseVarIndex + 1]);
+              value = toString(UserVar[event->BaseVarIndex + 1],ExtraTaskSettings.TaskDeviceValueDecimals[1]);
               MQTTclient.publish(tmppubname, value);
               tmppubname = pubname;
               tmppubname.replace("%valname%", ExtraTaskSettings.TaskDeviceValueNames[2]);
-              value = String(UserVar[event->BaseVarIndex + 2]);
+              value = toString(UserVar[event->BaseVarIndex + 2],ExtraTaskSettings.TaskDeviceValueDecimals[2]);
               MQTTclient.publish(tmppubname, value);
               break;
             }

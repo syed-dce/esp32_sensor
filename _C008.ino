@@ -110,14 +110,18 @@ boolean HTTPSend(struct EventStruct *event, byte varIndex, float value, unsigned
   if (longValue)
     url.replace("%value%", String(longValue));
   else
-    url.replace("%value%", String(value));
+    url.replace("%value%", toString(value, ExtraTaskSettings.TaskDeviceValueDecimals[varIndex]));
 
   url.toCharArray(log, 80);
   addLog(LOG_LEVEL_DEBUG_MORE, log);
 
+  String hostName = host;
+  if (Settings.UseDNS)
+    hostName = Settings.ControllerHostName;
+    
   // This will send the request to the server
   client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
+               "Host: " + hostName + "\r\n" +
                "Connection: close\r\n\r\n");
 
   unsigned long timer = millis() + 200;

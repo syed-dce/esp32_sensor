@@ -92,7 +92,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                              87
+#define BUILD                             101
 #define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 #define FEATURE_SPIFFS                  false
 
@@ -192,13 +192,17 @@
 #include <ESP8266HTTPUpdateServer.h>
 ESP8266HTTPUpdateServer httpUpdater(true);
 #if ESP_CORE >= 210
-  #include <Base64.h>
+  #include <base64.h>
 #endif
 #define LWIP_OPEN_SRC
 #include "lwip/opt.h"
 #include "lwip/udp.h"
 #include "lwip/igmp.h"
 #include "include/UdpContext.h"
+
+extern "C" {
+#include "user_interface.h"
+}
 
 // Setup DNS, only used if the ESP has no valid WiFi config
 const byte DNS_PORT = 53;
@@ -299,10 +303,11 @@ struct SettingsStruct
 struct ExtraTaskSettingsStruct
 {
   byte    TaskIndex;
-  char    TaskDeviceName[26];
+  char    TaskDeviceName[41];
   char    TaskDeviceFormula[VARS_PER_TASK][41];
-  char    TaskDeviceValueNames[VARS_PER_TASK][26];
+  char    TaskDeviceValueNames[VARS_PER_TASK][41];
   long    TaskDevicePluginConfigLong[PLUGIN_EXTRACONFIGVAR_MAX];
+  byte    TaskDeviceValueDecimals[VARS_PER_TASK];
 } ExtraTaskSettings;
 
 struct EventStruct
@@ -342,6 +347,7 @@ struct DeviceStruct
   boolean SendDataOption;
   boolean GlobalSyncOption;
   boolean TimerOption;
+  boolean TimerOptional;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
 struct ProtocolStruct
@@ -425,6 +431,10 @@ boolean wifiSetupConnect = false;
 unsigned long start = 0;
 unsigned long elapsed = 0;
 unsigned long loopCounter = 0;
+unsigned long loopCounterLast = 0;
+unsigned long loopCounterMax = 1;
+
+String eventBuffer = "";
 
 /*********************************************************************************************\
  * SETUP
@@ -487,7 +497,7 @@ void setup()
 
     WiFi.persistent(false); // Do not use SDK storage of SSID/WPA parameters
     WifiAPconfig();
-    WifiConnect();
+    WifiConnect(3);
 
     hardwareInit();
     PluginInit();
@@ -545,7 +555,9 @@ void setup()
     if (bootMode == 0)
     {
       for (byte x = 0; x < TASKS_MAX; x++)
-        timerSensor[x] = millis() + 30000 + (x * Settings.MessageDelay);
+        if (Settings.TaskDeviceTimer[x] !=0)
+          timerSensor[x] = millis() + 30000 + (x * Settings.MessageDelay);
+      
       timer = millis() + 30000; // startup delay 30 sec
     }
     else
@@ -588,7 +600,7 @@ void loop()
   if (wifiSetupConnect)
   {
     // try to connect for setup wizard
-    WifiConnect();
+    WifiConnect(1);
     wifiSetupConnect = false;
   }
 
@@ -624,6 +636,12 @@ void run10TimesPerSecond()
   start = micros();
   timer100ms = millis() + 100;
   PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
+  checkUDP();
+  if (Settings.UseRules && eventBuffer.length() > 0)
+  {
+    rulesProcessing(eventBuffer);
+    eventBuffer = "";
+  }
   elapsed = micros() - start;
 }
 
@@ -633,6 +651,8 @@ void run10TimesPerSecond()
 \*********************************************************************************************/
 void runOncePerSecond()
 {
+  timer1s = millis() + 1000;
+
   checkSensors();
 
   if (connectionFailures > REBOOT_ON_MAX_CONNECTION_FAILURES)
@@ -671,9 +691,6 @@ void runOncePerSecond()
 
   timer = micros() - timer;
 
-  timer1s = millis() + 1000;
-  WifiCheck();
-
   if (SecuritySettings.Password[0] != 0)
   {
     if (WebLoggedIn)
@@ -695,10 +712,7 @@ void runOncePerSecond()
     Serial.print(F("10 ps:"));
     Serial.print(elapsed);
     Serial.print(F(" uS  1 ps:"));
-    Serial.print(timer);
-    Serial.print(F(" uS  LC:"));
-    Serial.println(loopCounter);
-    loopCounter = 0;
+    Serial.println(timer);
   }
 }
 
@@ -722,6 +736,13 @@ void runEach30Seconds()
   if (Settings.UseSSDP)
     SSDP_update();
 #endif
+  loopCounterLast = loopCounter;
+  loopCounter = 0;
+  if (loopCounterLast > loopCounterMax)
+    loopCounterMax = loopCounterLast;
+
+  WifiCheck();
+  
 }
 
 
@@ -748,9 +769,11 @@ void checkSensors()
   {
     for (byte x = 0; x < TASKS_MAX; x++)
     {
-      if (millis() > timerSensor[x])
+      if ((Settings.TaskDeviceTimer[x] != 0) && (millis() > timerSensor[x]))
       {
         timerSensor[x] = millis() + Settings.TaskDeviceTimer[x] * 1000;
+        if (timerSensor[x] == 0) // small fix if result is 0, else timer will be stopped...
+          timerSensor[x] = 1;
         SensorSendTask(x);
       }
     }
@@ -775,7 +798,7 @@ void SensorSend()
 \*********************************************************************************************/
 void SensorSendTask(byte TaskIndex)
 {
-  if (Settings.TaskDeviceDataFeed[TaskIndex] == 0 && Settings.TaskDeviceID[TaskIndex] != 0)
+  if (Settings.TaskDeviceID[TaskIndex] != 0)
   {
     byte varIndex = TaskIndex * VARS_PER_TASK;
 
@@ -793,7 +816,10 @@ void SensorSendTask(byte TaskIndex)
     for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
       preValue[varNr] = UserVar[varIndex + varNr];
 
-    success = PluginCall(PLUGIN_READ, &TempEvent, dummyString);
+    if(Settings.TaskDeviceDataFeed[TaskIndex] == 0)  // only read local connected sensorsfeeds
+      success = PluginCall(PLUGIN_READ, &TempEvent, dummyString);
+    else
+      success = true;
 
     if (success)
     {
@@ -914,7 +940,6 @@ void backgroundtasks()
   if (wifiSetup)
     dnsServer.processNextRequest();
 
-  checkUDP();
   WebServer.handleClient();
   MQTTclient.loop();
   statusLED(false);

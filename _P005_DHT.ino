@@ -96,7 +96,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
         digitalWrite(Plugin_005_DHT_Pin, LOW);              // Pull low
         delay(18);
         digitalWrite(Plugin_005_DHT_Pin, HIGH);             // Pull high
-        delayMicroseconds(40);
+        delayMicroseconds(20); // was 40
         pinMode(Plugin_005_DHT_Pin, INPUT);                 // change pin to input
         delayMicroseconds(10);
 
@@ -107,7 +107,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
           dht_in = digitalRead(Plugin_005_DHT_Pin);
           if (dht_in)
           {
-            delayMicroseconds(40);                     // now ready for data reception
+            delayMicroseconds(80);                     // now ready for data reception
             for (i = 0; i < 5; i++)
             {
               byte data = Plugin_005_read_dht_dat();

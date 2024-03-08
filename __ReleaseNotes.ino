@@ -1,3 +1,67 @@
+// R101 17-04-2016
+// bugfix P020, the savetasksettings was obsolete, the loadtasksettings was not...
+// Use hostname in C008 protocol if the controller hostname is configured (instead of IP)
+
+// R100 13-04-2016
+// Moved UDP handling from background tasks as it could lead to recursive function call issues on globalsync receive
+// Some more experimental features:
+//  - Added option to send rule events using http control page: /control?cmd=event,<event> (single event buffer limitation applies!)
+//  - Added option to send rule events using openhab MQTT protocol: publish event,<event> to <template>/cmd (single event buffer limitation applies!)
+//  - Added 'SendTo <unit>,<command>' command for remote unit control commands (uses the internal peer to peer UDP messaging)
+//  - Added 'Publish <topic>,<value>' command to send remote commands to other ESP using MQTT broker
+
+// R99 11-04-2016
+// Moved PLUGIN_INIT call from webserver form post request after savesettings
+// Device table no longer displayed when task is in edit mode, to reduce page size.
+// Removed obsolete taskload/save from P020
+// Removed obsolete taskload from P004
+
+// R98 10-04-2016
+// Fixed boot state send for GPIO for state=1
+// Added send state at boot stage for MCP and PCF plugins
+// Added option to periodically send input switch states (set timer value to >0)
+
+// R97 09-04-2016
+// Bugfix, unable to deselect LED pin when I2C is not configured on any pin.
+
+// R96 07-04-2016
+// Bugfix in caching of ExtraTaskSettings
+
+// R95 31-03-2016
+// Removed AP config within WifiApMode function, not needed as it is already set at WifiAPConfig
+// Added logging to AP mode change
+// Added periodic Wifi reconnect check when Wifi connection is lost, AP will be active during this stage
+// Set status led pin to -1 on factory reset
+// Removed some obsolete debug commands
+
+// R94 30-03-2016
+// Fix for clock event rules and added size counter for rules interface (currently 2048 byte max)
+
+// R93 27-03-2016
+// Enabled senddata for remote feed sensors and suppressed additional config settings on remote feed tasks.
+// Settings save bug, sends 32 sectors instead of only 8 needed. Also the offset 2048 was wrong in the second client.write
+// Added Name, Unit number, Build and datestamp to the config file name, sample: Config_DemoESP_U12_R93_2016_3_27.txt
+
+// R92 26-03-2016
+// Fixed rounding bug, it seems that String() has a bug with 0 decimals, adding a leading white space. Fixed with toString wrapper.
+
+// R91 20-03-2016
+// Added globalsync option to Dallas plugin config
+
+// R90 20-03-2016
+// Changed DHT plugin timing, start pulse delay wait was 80/40, should be 80/80. It could result in reading 'half' values.
+
+// R89 20-03-2016
+// Added simple load indicator by counting and comparing idle loop counts during initial delay and working mode.
+// Moved custom value display of SENSOR_TYPE_LONG from plugins to webserver.ino
+// Changed <Base64.h> to <base64.h>, case sensitivity issue on Linux
+
+// R88 19-03-2016
+// Option to set decimals for sensor values reported to controller and display. (internal precision remains unchanged)
+// Changed DHT plugin timing, 40 -> 20 uSec
+// Increased taskname and valuename fieldsize from 25->40
+//   IMPORTANT NOTE: Stored settings to file will become invalid, need to resave after upgrade to R88!
+
 // R87 18-03-2016
 // Remote sensors also create event for rules
 // Fixed IR sensor type, should be SENSOR_TYPE_LONG as it is a unsigned long value.
