@@ -1454,10 +1454,10 @@ void handle_i2cscanner() {
           reply += F("DS1307 RTC");
           break;
         case 0x76:
-          reply += F("BME280");
+          reply += F("BME280/BMP280/MS5607/MS5611");
           break;
         case 0x77:
-          reply += F("BMP085");
+          reply += F("BMP085/MS5607/MS5611");
           break;
         case 0x7f:
           reply += F("Arduino Pro Mini IO Extender");
@@ -1467,7 +1467,7 @@ void handle_i2cscanner() {
     }
     else if (error == 4)
     {
-      reply += F("<TR><TD>Unknow error at address 0x");
+      reply += F("<TR><TD>Unknown error at address 0x");
       reply += String(address, HEX);
     }
   }
@@ -1704,6 +1704,7 @@ void handle_advanced() {
   String wireclockstretchlimit = WebServer.arg("wireclockstretchlimit");
   String globalsync = WebServer.arg("globalsync");
   String userules = WebServer.arg("userules");
+  String cft = WebServer.arg("cft");
 
   if (edit.length() != 0)
   {
@@ -1736,6 +1737,7 @@ void handle_advanced() {
 #endif
     Settings.UseRules = (userules == "on");
     Settings.GlobalSync = (globalsync == "on");
+    Settings.ConnectionFailuresThreshold = cft.toInt();
     SaveSettings();
   }
 
@@ -1829,6 +1831,10 @@ void handle_advanced() {
   else
     reply += F("<input type=checkbox name='usessdp'>");
 #endif
+
+  reply += F("<TR><TD>Connection Failure Threshold:<TD><input type='text' name='cft' value='");
+  reply += Settings.ConnectionFailuresThreshold;
+  reply += F("'>");
 
   reply += F("<TR><TH>Experimental Settings<TH>Value");
 

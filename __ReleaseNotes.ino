@@ -1,3 +1,27 @@
+// R107 21-05-2016
+// Support to include VCC reading at compile time, defaults to disabled. (contributed by Battika)
+
+// R106 10-05-2016
+// Added support for DS1820/DS18S20 sensor types
+// Option to change connection failure threshold, set to 0 to disable.
+
+// R105 26-04-2016
+// Bugfix for event names ending with "on "
+// Added support for SHT1X sensors like the SHT10 Soil Moisture sensor (contributed by MarkBergsma)
+
+// R104 25-04-2016
+// Added a few lowlevel networking commands, to be used in the rules section:
+//   SendToUDP <ip>,<port>,<message>  sample: SendToUDP 192.168.0.123,65500,Hello
+//   SendToHTTP <ip>,<port>,<path>    sample: SendToHTTP 192.168.0.8,8080,/json.htm
+// Reduced flash load size to 2048 in rules engine and use static pointer to save memory on recursive calls
+// Max nesting level on rules is 3 levels deep
+
+// R103 19-04-2016
+// Upon request, added option for factory default static IP settings.
+
+// R102 19-04-2016
+// Added support for BMP280  (contributed by PM-CZ)
+
 // R101 17-04-2016
 // bugfix P020, the savetasksettings was obsolete, the loadtasksettings was not...
 // Use hostname in C008 protocol if the controller hostname is configured (instead of IP)

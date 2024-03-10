@@ -53,6 +53,7 @@
 //   ADS1115 I2C ADC
 //   INA219 I2C voltage/current sensor
 //   BME280 I2C temp/hum/baro sensor
+//   MSP5611 I2C temp/baro sensor
 
 //   Experimental/Preliminary:
 //   =========================
@@ -64,7 +65,7 @@
 // ********************************************************************************
 
 // Set default configuration settings if you want (not mandatory)
-// You can allways change these during runtime and save to eeprom
+// You can always change these during runtime and save to eeprom
 // After loading firmware, issue a 'reset' command to load the defaults.
 
 #define DEFAULT_NAME        "newdevice"         // Enter your device friendly name
@@ -74,6 +75,17 @@
 #define DEFAULT_PORT        8080                // Enter your Domoticz Server port value
 #define DEFAULT_DELAY       60                  // Enter your Send delay in seconds
 #define DEFAULT_AP_KEY      "configesp"         // Enter network WPA key for AP (config) mode
+
+#define DEFAULT_USE_STATIC_IP   false           // true or false enabled or disabled set static IP
+#define DEFAULT_IP          "192.168.0.50"      // Enter your IP address
+#define DEFAULT_DNS         "192.168.0.1"       // Enter your DNS
+#define DEFAULT_GW          "192.168.0.1"       // Enter your gateway
+#define DEFAULT_SUBNET      "255.255.255.0"     // Enter your subnet
+
+#define DEFAULT_MQTT_TEMPLATE false              // true or false enabled or disabled set mqqt sub and pub
+#define DEFAULT_MQTT_PUB    "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
+#define DEFAULT_MQTT_SUB    "sensors/espeasy/%sysname%/#" // Enter your sub
+
 #define DEFAULT_PROTOCOL    1                   // Protocol used for controller communications
 //   1 = Domoticz HTTP
 //   2 = Domoticz MQTT
@@ -86,14 +98,19 @@
 
 #define FEATURE_TIME                     true
 #define FEATURE_SSDP                     true
+
+// Enable FEATURE_ADC_VCC to measure supply voltage using the analog pin
+// Please note that the TOUT pin has to be disconnected in this mode
+// Use the "System Info" device to read the VCC value
+#define FEATURE_ADC_VCC                  false
+
 // ********************************************************************************
 //   DO NOT CHANGE ANYTHING BELOW THIS LINE
 // ********************************************************************************
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             101
-#define REBOOT_ON_MAX_CONNECTION_FAILURES  30
+#define BUILD                             107
 #define FEATURE_SPIFFS                  false
 
 #define CPLUGIN_PROTOCOL_ADD                1
@@ -124,6 +141,8 @@
 #define SYSTEM_TIMER_MAX                    8
 #define SYSTEM_CMD_TIMER_MAX                2
 #define PINSTATE_TABLE_MAX                 32
+#define RULES_MAX_SIZE                   2048
+#define RULES_MAX_NESTING_LEVEL             3
 
 #define PIN_MODE_UNDEFINED                  0
 #define PIN_MODE_INPUT                      1
@@ -193,6 +212,9 @@
 ESP8266HTTPUpdateServer httpUpdater(true);
 #if ESP_CORE >= 210
   #include <base64.h>
+#endif
+#if FEATURE_ADC_VCC
+ADC_MODE(ADC_VCC);
 #endif
 #define LWIP_OPEN_SRC
 #include "lwip/opt.h"
@@ -298,6 +320,7 @@ struct SettingsStruct
   boolean       UseSSDP;
   unsigned long WireClockStretchLimit;
   boolean       GlobalSync;
+  unsigned long ConnectionFailuresThreshold;
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -410,6 +433,10 @@ boolean AP_Mode = false;
 byte cmd_within_mainloop = 0;
 unsigned long connectionFailures;
 unsigned long wdcounter = 0;
+
+#if FEATURE_ADC_VCC
+float vcc = -1.0;
+#endif
 
 boolean WebLoggedIn = false;
 int WebLoggedInTimer = 300;
@@ -576,6 +603,10 @@ void setup()
       initTime();
 #endif
 
+#if FEATURE_ADC_VCC
+    vcc = ESP.getVcc() / 1000.0;
+#endif
+
     // Start DNS, only used if the ESP has no valid WiFi config
     // It will reply with it's own address on all DNS requests
     // (captive portal concept)
@@ -655,8 +686,9 @@ void runOncePerSecond()
 
   checkSensors();
 
-  if (connectionFailures > REBOOT_ON_MAX_CONNECTION_FAILURES)
-    delayedReboot(60);
+  if (Settings.ConnectionFailuresThreshold)
+    if (connectionFailures > Settings.ConnectionFailuresThreshold)
+      delayedReboot(60);
 
   if (cmd_within_mainloop != 0)
   {
@@ -735,6 +767,9 @@ void runEach30Seconds()
 #if FEATURE_SSDP
   if (Settings.UseSSDP)
     SSDP_update();
+#endif
+#if FEATURE_ADC_VCC
+  vcc = ESP.getVcc() / 1000.0;
 #endif
   loopCounterLast = loopCounter;
   loopCounter = 0;
@@ -824,7 +859,7 @@ void SensorSendTask(byte TaskIndex)
     if (success)
     {
       for (byte varNr = 0; varNr < VARS_PER_TASK; varNr++)
-      {
+      {  
         if (ExtraTaskSettings.TaskDeviceFormula[varNr][0] != 0)
         {
           String spreValue = String(preValue[varNr]);
