@@ -236,6 +236,12 @@ void handle_root() {
     reply += ESP.getFlashChipRealSize() / 1024; //ESP.getFlashChipSize();
     reply += F(" kB");
 
+    reply += F("<TR><TD>Sketch Size/Free:<TD>");
+    reply += ESP.getSketchSize() / 1024;
+    reply += F(" kB / ");
+    reply += ESP.getFreeSketchSpace() / 1024;
+    reply += F(" kB");
+
     reply += F("<TR><TD>Free Mem:<TD>");
     reply += freeMem;
 
@@ -1035,6 +1041,20 @@ void handle_devices() {
               reply += F("<a class=\"button-link\" href=\"http://www.esp8266.nu/index.php/EasyFormula\" target=\"_blank\">?</a>");
           }
         }
+        else
+        {
+        if (Device[DeviceIndex].DecimalsOnly)
+          for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
+          {
+            reply += F("<TR><TD>Decimals ");
+            reply += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+            reply += F(":<TD><input type='text' name='taskdevicevaluedecimals");
+            reply += varNr + 1;
+            reply += F("' value='");
+            reply += ExtraTaskSettings.TaskDeviceValueDecimals[varNr];
+            reply += F("'>");
+          }
+        }
 
         for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
         {
@@ -1458,6 +1478,9 @@ void handle_i2cscanner() {
         case 0x48:
           reply += F("PCF8591 ADC");
           break;
+        case 0x5C:
+          reply += F("DHT 12");
+          break;
         case 0x68:
           reply += F("DS1307 RTC");
           break;
@@ -1713,6 +1736,7 @@ void handle_advanced() {
   String globalsync = WebServer.arg("globalsync");
   String userules = WebServer.arg("userules");
   String cft = WebServer.arg("cft");
+  String MQTTRetainFlag = WebServer.arg("mqttretainflag");
 
   if (edit.length() != 0)
   {
@@ -1744,6 +1768,7 @@ void handle_advanced() {
     Settings.UseRules = (userules == "on");
     Settings.GlobalSync = (globalsync == "on");
     Settings.ConnectionFailuresThreshold = cft.toInt();
+    Settings.MQTTRetainFlag = (MQTTRetainFlag == "on");
     SaveSettings();
 #if FEATURE_TIME
     if (Settings.UseNTP)
@@ -1765,7 +1790,13 @@ void handle_advanced() {
   reply += F("'><TR><TD>Publish Template:<TD><input type='text' name='mqttpublish' size=80 value='");
   reply += Settings.MQTTpublish;
 
-  reply += F("'><TR><TD>Message Delay (ms):<TD><input type='text' name='messagedelay' value='");
+  reply += F("'><TR><TD>MQTT Retain Msg:<TD>");
+  if (Settings.MQTTRetainFlag)
+    reply += F("<input type=checkbox name='mqttretainflag' checked>");
+  else
+    reply += F("<input type=checkbox name='mqttretainflag'>");
+
+  reply += F("<TR><TD>Message Delay (ms):<TD><input type='text' name='messagedelay' value='");
   reply += Settings.MessageDelay;
 
   reply += F("'><TR><TD>Fixed IP Octet:<TD><input type='text' name='ip' value='");

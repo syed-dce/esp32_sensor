@@ -31,7 +31,7 @@
 //   Analog input (ESP-7/12 only)
 //   Pulse counters
 //   Dallas OneWire DS18b20 temperature sensors
-//   DHT11/22 humidity sensors
+//   DHT11/22/12 humidity sensors
 //   BMP085 I2C Barometric Pressure sensor
 //   PCF8591 4 port Analog to Digital converter (I2C)
 //   RFID Wiegand-26 reader
@@ -113,7 +113,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             118
+#define BUILD                             122
 #define FEATURE_SPIFFS                  false
 
 #define CPLUGIN_PROTOCOL_ADD                1
@@ -141,7 +141,7 @@
 #define PLUGIN_CONFIGLONGVAR_MAX            4
 #define PLUGIN_EXTRACONFIGVAR_MAX          16
 #define CPLUGIN_MAX                        16
-#define UNIT_MAX                           32
+#define UNIT_MAX                           32 // Only relevant for UDP unicast message 'sweeps' and the nodelist.
 #define RULES_TIMER_MAX                     8
 #define SYSTEM_TIMER_MAX                    8
 #define SYSTEM_CMD_TIMER_MAX                2
@@ -329,6 +329,7 @@ struct SettingsStruct
   boolean       GlobalSync;
   unsigned long ConnectionFailuresThreshold;
   int16_t       TimeZone;
+  boolean       MQTTRetainFlag;
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -379,6 +380,7 @@ struct DeviceStruct
   boolean GlobalSyncOption;
   boolean TimerOption;
   boolean TimerOptional;
+  boolean DecimalsOnly;
 } Device[DEVICES_MAX + 1]; // 1 more because first device is empty device
 
 struct ProtocolStruct

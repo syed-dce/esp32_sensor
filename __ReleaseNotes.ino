@@ -1,3 +1,21 @@
+// R122 16-08-2016
+// Check on unit number < UNIT_MAX before adding self to the nodelist. This would corrupt the nodelist data structure for units > 31
+// Fixed another potential buffer overflow when logging ser2net data. And changed the fix from R119. Extended Ser2Net logging.
+// Increased the syslog buffer size to 256 bytes.
+
+// R121 11-08-2016
+// Added option for MQTT retain flag. Can be configured in /tools/advanced
+// Added internal TaskRun <tasknr> command
+
+// R120 10-08-2016
+// Removed formula fields from the Dummy Device. This will not work anyway. Use a formula in TaskValueSet command instead.
+
+// R119 09-08-2016
+// Fixed calculation for DS1820 DS18S20 with extended precision for negative temperatures (contributed by saschaludwig)
+// Bugfixes for uninitialized variable and potential buffer overflow (contributed by bertrik)
+// Bugfix pulse commands for PCF8574 plugin
+// Main webpage shows sketch size / free size
+
 // R118 03-08-2016
 // Added the Dummy Device to production (used in the testlab in the past, but can also be useful for production purposes)
 //   You can use "TaskValueSet <task nr>,<variable nr>,<value>" in the rules section to set values
@@ -5,7 +23,7 @@
 // Prepared framework for SENSOR_TYPE_DUAL
 
 // R117 01-08-2016
-// Added support for FHEM using HTTP protocol
+// Added support for FHEM using HTTP protocol (contributed by ddtlabs)
 
 // R116 01-08-2016
 // Counter plugin can be set to "Delta" (original and default setting for Domoticz incremental counter) or "Delta/Total/Time" for other controllers that can handle this counter type
