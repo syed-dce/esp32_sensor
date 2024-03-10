@@ -1,4 +1,3 @@
-#define ESP_CORE 210
 /****************************************************************************************************************************\
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
@@ -54,11 +53,12 @@
 //   INA219 I2C voltage/current sensor
 //   BME280 I2C temp/hum/baro sensor
 //   MSP5611 I2C temp/baro sensor
+//   BMP280 I2C Barometric Pressure sensor
+//   SHT1X temperature/humidity sensors
 
 //   Experimental/Preliminary:
 //   =========================
 //   Ser2Net server
-//   Local Level Control to GPIO
 
 // ********************************************************************************
 //   User specific configuration
@@ -94,6 +94,9 @@
 //   5 = OpenHAB MQTT
 //   6 = PiDome MQTT
 //   7 = EmonCMS
+//   8 = Generic HTTP
+//   9 = FHEM HTTP
+
 #define UNIT                0
 
 #define FEATURE_TIME                     true
@@ -110,7 +113,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             107
+#define BUILD                             118
 #define FEATURE_SPIFFS                  false
 
 #define CPLUGIN_PROTOCOL_ADD                1
@@ -118,6 +121,8 @@
 #define CPLUGIN_PROTOCOL_SEND               3
 #define CPLUGIN_PROTOCOL_RECV               4
 #define CPLUGIN_GET_DEVICENAME              5
+#define CPLUGIN_WEBFORM_SAVE                6
+#define CPLUGIN_WEBFORM_LOAD                7
 
 #define LOG_LEVEL_ERROR                     1
 #define LOG_LEVEL_INFO                      2
@@ -157,11 +162,14 @@
 #define DEVICE_TYPE_I2C                     2  // connected through I2C
 #define DEVICE_TYPE_ANALOG                  3  // tout pin
 #define DEVICE_TYPE_DUAL                    4  // connected through 2 datapins
+#define DEVICE_TYPE_DUMMY                  99  // Dummy device, has no physical connection
 
 #define SENSOR_TYPE_SINGLE                  1
 #define SENSOR_TYPE_TEMP_HUM                2
 #define SENSOR_TYPE_TEMP_BARO               3
 #define SENSOR_TYPE_TEMP_HUM_BARO           4
+#define SENSOR_TYPE_DUAL                    5
+#define SENSOR_TYPE_TRIPLE                  6
 #define SENSOR_TYPE_SWITCH                 10
 #define SENSOR_TYPE_DIMMER                 11
 #define SENSOR_TYPE_LONG                   20
@@ -210,9 +218,7 @@
 #endif
 #include <ESP8266HTTPUpdateServer.h>
 ESP8266HTTPUpdateServer httpUpdater(true);
-#if ESP_CORE >= 210
-  #include <base64.h>
-#endif
+#include <base64.h>
 #if FEATURE_ADC_VCC
 ADC_MODE(ADC_VCC);
 #endif
@@ -235,7 +241,8 @@ Servo myservo1;
 Servo myservo2;
 
 // MQTT client
-PubSubClient MQTTclient("");
+WiFiClient mqtt;
+PubSubClient MQTTclient(mqtt);
 
 // WebServer
 ESP8266WebServer WebServer(80);
@@ -303,7 +310,7 @@ struct SettingsStruct
   boolean       TaskDeviceSendData[TASKS_MAX];
   int16_t       Build;
   byte          DNS[4];
-  int8_t        TimeZone;
+  int8_t        TimeZone_OLD;
   char          ControllerHostName[64];
   boolean       UseNTP;
   boolean       DST;
@@ -321,6 +328,7 @@ struct SettingsStruct
   unsigned long WireClockStretchLimit;
   boolean       GlobalSync;
   unsigned long ConnectionFailuresThreshold;
+  int16_t       TimeZone;
 } Settings;
 
 struct ExtraTaskSettingsStruct

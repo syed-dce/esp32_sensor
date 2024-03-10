@@ -207,7 +207,10 @@ void handle_root() {
 
     reply += F("<TR><TD>Build:<TD>");
     reply += BUILD;
-
+    
+    reply += F("<TR><TD>Core Version:<TD>");
+    reply += ESP.getCoreVersion();
+        
     reply += F("<TR><TD>Unit:<TD>");
     reply += Settings.Unit;
 
@@ -348,6 +351,8 @@ void handle_config() {
     {
       if (Settings.Protocol != 0)
       {
+        byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
+        CPlugin_ptr[ProtocolIndex](CPLUGIN_WEBFORM_SAVE, 0, dummyString);
         Settings.UseDNS = usedns.toInt();
         if (Settings.UseDNS)
         {
@@ -479,6 +484,9 @@ void handle_config() {
       reply += SecuritySettings.ControllerPassword;
     }
     reply += F("'>");
+
+    CPlugin_ptr[ProtocolIndex](CPLUGIN_WEBFORM_LOAD, 0, reply);
+    
   }
 
   reply += F("<TR><TD>Sensor Delay:<TD><input type='text' name='delay' value='");
@@ -1732,13 +1740,15 @@ void handle_advanced() {
     Settings.DST = (dst == "on");
     Settings.WDI2CAddress = wdi2caddress.toInt();
     Settings.UseSSDP = (usessdp == "on");
-#if ESP_CORE >= 210
     Settings.WireClockStretchLimit = wireclockstretchlimit.toInt();
-#endif
     Settings.UseRules = (userules == "on");
     Settings.GlobalSync = (globalsync == "on");
     Settings.ConnectionFailuresThreshold = cft.toInt();
     SaveSettings();
+#if FEATURE_TIME
+    if (Settings.UseNTP)
+      initTime();
+#endif
   }
 
   String reply = "";
@@ -1772,7 +1782,7 @@ void handle_advanced() {
   reply += F("<TR><TD>NTP Hostname:<TD><input type='text' name='ntphost' size=64 value='");
   reply += Settings.NTPHost;
 
-  reply += F("'><TR><TD>Timezone Offset:<TD><input type='text' name='timezone' size=2 value='");
+  reply += F("'><TR><TD>Timezone Offset: (Minutes)<TD><input type='text' name='timezone' size=2 value='");
   reply += Settings.TimeZone;
   reply += F("'>");
 
@@ -1836,19 +1846,17 @@ void handle_advanced() {
   reply += Settings.ConnectionFailuresThreshold;
   reply += F("'>");
 
-  reply += F("<TR><TH>Experimental Settings<TH>Value");
-
-#if ESP_CORE >= 210
-  reply += F("<TR><TD>I2C ClockStretchLimit:<TD><input type='text' name='wireclockstretchlimit' value='");
-  reply += Settings.WireClockStretchLimit;
-  reply += F("'>");
-#endif
-
   reply += F("<TR><TD>Rules:<TD>");
   if (Settings.UseRules)
     reply += F("<input type=checkbox name='userules' checked>");
   else
     reply += F("<input type=checkbox name='userules'>");
+
+  reply += F("<TR><TH>Experimental Settings<TH>Value");
+
+  reply += F("<TR><TD>I2C ClockStretchLimit:<TD><input type='text' name='wireclockstretchlimit' value='");
+  reply += Settings.WireClockStretchLimit;
+  reply += F("'>");
 
   reply += F("<TR><TD>Global Sync:<TD>");
   if (Settings.GlobalSync)
