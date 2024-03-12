@@ -207,6 +207,8 @@ void handle_root() {
 
     reply += F("<TR><TD>Build:<TD>");
     reply += BUILD;
+    reply += F(" ");
+    reply += F(BUILD_NOTES);
     
     reply += F("<TR><TD>Core Version:<TD>");
     reply += ESP.getCoreVersion();
@@ -350,7 +352,7 @@ void handle_config() {
       Settings.Protocol = protocol.toInt();
       byte ProtocolIndex = getProtocolIndex(Settings.Protocol);
       Settings.ControllerPort = Protocol[ProtocolIndex].defaultPort;
-      if (Protocol[ProtocolIndex].usesMQTT)
+      if (Protocol[ProtocolIndex].usesTemplate)
         CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, 0, dummyString);
     }
     else
@@ -1479,7 +1481,7 @@ void handle_i2cscanner() {
           reply += F("PCF8591 ADC");
           break;
         case 0x5C:
-          reply += F("DHT 12");
+          reply += F("DHT12/BH1750 Lux Sensor");
           break;
         case 0x68:
           reply += F("DS1307 RTC");

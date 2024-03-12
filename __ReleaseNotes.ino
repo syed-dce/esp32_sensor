@@ -1,3 +1,26 @@
+// R127 04-09-2016
+// Fixed the situation where using the old style MQTT gpio/pwm commands left event-Par3 uninitialized.
+//   causing an 'endless' delay using pwm command
+
+// R126 28-08-2016
+// Added JSON support on FHEM controller plugin (contributed by ddtlabs)
+
+// R125 27-08-2016
+// Update OLED plugin, support for smaller displays (contributed by ToniA)
+
+// R124 20-08-2016
+// Corrected minor issue on plugin_027
+// Adjustable serial RX Receive timeout in Ser2Net plugin. To collect entire message and send it as one TCP packet.
+// Added generic UDP controller, C010
+// Added SENSOR_TYPE_QUAD, mainly for dummy device
+// Code optimization for controllers C004, C005, C006, C008
+// Added default template to C008
+// Added IR TX plugin from the playground as P035, (contributed by cherowley)
+
+// R123 19-08-2016
+// Added support for the DHT12 sensor, successor of the famous DHT11. (contributed by pm-cz)
+//   It can be used as single wire or I2C.
+
 // R122 16-08-2016
 // Check on unit number < UNIT_MAX before adding self to the nodelist. This would corrupt the nodelist data structure for units > 31
 // Fixed another potential buffer overflow when logging ser2net data. And changed the fix from R119. Extended Ser2Net logging.
