@@ -786,6 +786,7 @@ int SpiffsSectors()
   \*********************************************************************************************/
 void ResetFactory(void)
 {
+
   // Direct Serial is allowed here, since this is only an emergency task.
   Serial.println(F("Resetting factory defaults..."));
   delay(1000);
@@ -807,12 +808,15 @@ void ResetFactory(void)
   saveToRTC();
 
   //always format on factory reset, in case of corrupt SPIFFS
-  String log;
-  log = F("formatting...");
-  addLog(LOG_LEVEL_INFO, log);
+  SPIFFS.end();
+  Serial.println(F("formatting..."));
   SPIFFS.format();
-  log = F("format done!");
-  addLog(LOG_LEVEL_INFO, log);
+  Serial.println(F("formatting done..."));
+  if (!SPIFFS.begin())
+  {
+    Serial.println(F("FORMATTING SPIFFS FAILED!"));
+    return;
+  }
 
 
   fs::File f = SPIFFS.open("config.dat", "w");
@@ -821,8 +825,8 @@ void ResetFactory(void)
     for (int x = 0; x < 65536; x++)
       f.write(0);
     f.close();
-
   }
+
   f = SPIFFS.open("security.dat", "w");
   if (f)
   {
@@ -830,6 +834,7 @@ void ResetFactory(void)
       f.write(0);
     f.close();
   }
+
   f = SPIFFS.open("notification.dat", "w");
   if (f)
   {
@@ -872,7 +877,7 @@ void ResetFactory(void)
   Settings.Protocol[0]        = DEFAULT_PROTOCOL;
   strcpy_P(Settings.Name, PSTR(DEFAULT_NAME));
   Settings.SerialLogLevel  = 2;
-  Settings.WebLogLevel     = 0;
+  Settings.WebLogLevel     = 2;
   Settings.BaudRate        = 115200;
   Settings.MessageDelay = 1000;
   Settings.deepSleep = false;
@@ -892,6 +897,7 @@ void ResetFactory(void)
   Settings.Build = BUILD;
   Settings.UseSerial = true;
   SaveSettings();
+  Serial.println("Factory reset succesful, rebooting...");
   delay(1000);
   WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
   WiFi.disconnect(); // this will store empty ssid/wpa into sdk storage
@@ -914,7 +920,7 @@ void emergencyReset()
   if (Serial.available() == 2)
     if (Serial.read() == 0xAA && Serial.read() == 0x55)
     {
-      Serial.println(F("\n\n\eSystem will reset to factory defaults in 10 seconds..."));
+      Serial.println(F("\n\n\rSystem will reset to factory defaults in 10 seconds..."));
       delay(10000);
       ResetFactory();
     }
@@ -960,7 +966,7 @@ void initLog()
   Settings.UseSerial=true;
   Settings.SyslogLevel=0;
   Settings.SerialLogLevel=2; //logging during initialisation
-  Settings.WebLogLevel=0;
+  Settings.WebLogLevel=2;
   Settings.SDLogLevel=0;
   for (int l; l<9; l++)
   {
