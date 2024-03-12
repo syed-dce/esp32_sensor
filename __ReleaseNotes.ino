@@ -1,3 +1,11 @@
+// R130 10-09-2016
+// Fixed some code when using SPIFFS (not recommended!)
+// Support DS1825 (contributed by maxx333)
+
+// R129 08-09-2016
+// Update plugin BH1750, support multiple sensors (contributed by guslinux & pm-cz)
+// Update plugin BME/BMP280, (contributed by pm-cz)
+
 // R128 06-09-2016
 // Update FHEM plugin (contributed by ddtlabs)
 // Change for decimals on SI7021 humidity (contributed by pm-cz)
