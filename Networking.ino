@@ -120,6 +120,7 @@ void checkUDP()
                     Nodes[unit].nodeName =  (char *)malloc(26);
                 memcpy(Nodes[unit].nodeName,(byte*)packetBuffer+15,25);
                 Nodes[unit].nodeName[25]=0;
+                Nodes[unit].nodeType = packetBuffer[40];
               }
             }
 
@@ -152,7 +153,8 @@ void checkUDP()
               {
                 Settings.TaskDeviceNumber[infoReply.destTaskIndex] = infoReply.deviceNumber;
                 Settings.TaskDeviceDataFeed[infoReply.destTaskIndex] = 1;  // remote feed
-                Settings.TaskDeviceSendData[infoReply.destTaskIndex] = false;
+                for (byte x=0; x < CONTROLLER_MAX; x++)
+                  Settings.TaskDeviceSendData[x][infoReply.destTaskIndex] = false;
                 strcpy(ExtraTaskSettings.TaskDeviceName, infoReply.taskName);
                 for (byte x = 0; x < VARS_PER_TASK; x++)
                   strcpy( ExtraTaskSettings.TaskDeviceValueNames[x], infoReply.ValueNames[x]);
@@ -277,7 +279,7 @@ void SendUDPCommand(byte destUnit, char* data, byte dataLength)
     firstUnit = destUnit;
     lastUnit = destUnit;
   }
-  for (byte x = firstUnit; x <= lastUnit; x++)
+  for (int x = firstUnit; x <= lastUnit; x++)
   {
     sendUDP(x, (byte*)data, dataLength);
     delay(10);
@@ -291,15 +293,20 @@ void SendUDPCommand(byte destUnit, char* data, byte dataLength)
   \*********************************************************************************************/
 void sendUDP(byte unit, byte* data, byte size)
 {
-  if (Nodes[unit].ip[0] == 0)
-    return;
+  if (unit != 255)
+    if (Nodes[unit].ip[0] == 0)
+      return;
   String log = "UDP  : Send UDP message to ";
   log += unit;
   addLog(LOG_LEVEL_DEBUG_MORE, log);
 
   statusLED(true);
 
-  IPAddress remoteNodeIP(Nodes[unit].ip[0], Nodes[unit].ip[1], Nodes[unit].ip[2], Nodes[unit].ip[3]);
+  IPAddress remoteNodeIP;
+  if (unit == 255)
+    remoteNodeIP = {255,255,255,255};
+  else
+    remoteNodeIP = Nodes[unit].ip;
   portUDP.beginPacket(remoteNodeIP, Settings.UDPPort);
   portUDP.write(data, size);
   portUDP.endPacket();
@@ -336,7 +343,8 @@ void sendSysInfoUDP(byte repeats)
   // 1 byte unit
   // 2 byte build
   // 25 char name
-  
+  // 1 byte node type id
+
   // send my info to the world...
   strcpy_P(log, PSTR("UDP  : Send Sysinfo message"));
   addLog(LOG_LEVEL_DEBUG_MORE, log);
@@ -356,6 +364,7 @@ void sendSysInfoUDP(byte repeats)
     data[13] = Settings.Build & 0xff;
     data[14] = Settings.Build >> 8;
     memcpy((byte*)data+15,Settings.Name,25);
+    data[40] = NODE_TYPE_ID;
     statusLED(true);
 
     IPAddress broadcastIP(255, 255, 255, 255);
@@ -374,11 +383,11 @@ void sendSysInfoUDP(byte repeats)
       Nodes[Settings.Unit].ip[x] = ip[x];
     Nodes[Settings.Unit].age = 0;
     Nodes[Settings.Unit].build = Settings.Build;
+    Nodes[Settings.Unit].nodeType = NODE_TYPE_ID;
   }
 }
 
 
-#if FEATURE_SSDP
 /********************************************************************************************\
   Respond to HTTP XML requests for SSDP information
   \*********************************************************************************************/
@@ -420,11 +429,11 @@ void SSDP_schema(WiFiClient client) {
   ssdp_schema += F("</serialNumber>"
                    "<modelName>ESP Easy</modelName>"
                    "<modelNumber>");
-  ssdp_schema += Settings.Build;
+  ssdp_schema += BUILD_GIT;
   ssdp_schema += F("</modelNumber>"
-                   "<modelURL>http://www.esp8266.nu</modelURL>"
-                   "<manufacturer>http://www.esp8266.nu</manufacturer>"
-                   "<manufacturerURL>http://www.esp8266.nu</manufacturerURL>"
+                   "<modelURL>http://www.letscontrolit.com</modelURL>"
+                   "<manufacturer>http://www.letscontrolit.com</manufacturer>"
+                   "<manufacturerURL>http://www.letscontrolit.com</manufacturerURL>"
                    "<UDN>uuid:");
   ssdp_schema += uuid;
   ssdp_schema += F("</UDN></device>"
@@ -695,5 +704,3 @@ void SSDP_update() {
   }
 
 }
-#endif
-

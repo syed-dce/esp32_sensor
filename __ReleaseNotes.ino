@@ -1,3 +1,76 @@
+// Rxxx 02-12-2016 EasyMega build (experimental)
+// Native SPIFFS support, old custom flash routines removed
+// Support OTA up to 1.5MB sketch size (change to 1M SPIFFS model) on 4M modules
+// Fallback Wifi AP support
+// Supports multiple active controllers
+// Supports notification plugins (basic email _N001.ino provided)
+// Native SD card support and system logging to SD card
+// Taskvalues are preserved during reboot (not after power loss!)
+// Multiple rule sets, max 4 sets, each 2k in size
+// Several device plugins reworked and added to the main branch:
+//   P036 Framed OLED
+//   P037 MQTT import
+//   P038 NeoPixel
+//   P039 Thermocouple
+//   P040 ID12/RDM6300 RFID
+//   P041 NeoPixel WordClock
+//   P042 NeoPixel Candle
+//   P043 Timer Clock
+//   P044 P1 gateway
+// Removed savesettings/savecustomsettings from candle plugin, check this later...
+// UDP broadcast option prep
+// Flash write protection mechanism (aded command 'resetFlashWriteCounter')
+// IDX/var no longer mandatory and only requested when the selected controller needs it
+// Clock#Time supports 'Wrk' for workdays and 'Wkd' for weekends as wildcards
+
+// R148 02-12-2016
+// Fixed a bug in ADS1115 plugin (contributed by Shardan)
+
+// R147 27-11-2016
+// Fixed a situation where a large message delay uses background processing without UPD handling, causing network issues.
+
+// R146 20-11-2016
+// Fixed a bug in PLUGIN_SERIAL/UDP calls where eventstruct data was not prepared
+//   Ser2Net plugin RXWait would only work as expected on task 1
+
+// R145 13-11-2016
+// Removed controller specific code from the framework (Domoticz test routines)
+// Fixed device table display
+
+// R144 12-11-2016
+// Fixed PCA Plugin init (contributed by thexperiments)
+
+// R143 02-11-2016
+// Added nodeType for future use
+
+// R142 26-10-2016
+// Fixed some more missing I2C scanner devices. Changed 'known' into 'supported'
+// Changed help items to www.letscontrolit.com/wiki
+// Added a retry mechanisme on NTP response failures, to minimize booting with time set to zero...
+
+// R141 21-10-2016
+// Fixed pulsecounter value display style elements
+// Fixed some missing I2C scanner 'known devices'
+
+// R140 16-10-2016
+// Added PCF8574A at default address as known device
+
+// R139 14-10-2016
+// Fixed a bug with Domoticz MQTT protocol. Broken as of R109, due to the new pubsub library
+//   It also needs a patched pubsub library!
+//   Also fixed a specific crash situation on invalid data
+
+// R138 10-10-2016
+// Fixed publish command
+// Fixed boot event, triggered after getting the system time
+
+// R137 09-10-2016
+// Added formula option for pow calculations like 2^3 in (contributed by pm-cz)
+
+// R136 07-10-2016
+// Added NodeMCU/Wemos pin numbers (contributed by nonflammable)
+// Added Pressure altitude adjustment to pressure sensors (contributed by adrianmihalko/pm-cz)
+
 // R135 05-10-2016
 // Added build and unit name to the node list
 

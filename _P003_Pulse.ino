@@ -98,9 +98,9 @@ boolean Plugin_003(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_SAVE:
       {
-        String plugin1 = WebServer.arg("plugin_003");
+        String plugin1 = WebServer.arg(F("plugin_003"));
         Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin1.toInt();
-        String plugin2 = WebServer.arg("plugin_003_countertype");
+        String plugin2 = WebServer.arg(F("plugin_003_countertype"));
         Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin2.toInt();
         success = true;
         break;
@@ -108,17 +108,19 @@ boolean Plugin_003(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_SHOW_VALUES:
       {
+        string += F("<div class=\"div_l\">");
         string += ExtraTaskSettings.TaskDeviceValueNames[0];
-        string += F(":");
+        string += F(":</div><div class=\"div_r\">");
         string += Plugin_003_pulseCounter[event->TaskIndex];
-        string += F("<BR>");
+        string += F("</div><div class=\"div_br\"></div><div class=\"div_l\">");
         string += ExtraTaskSettings.TaskDeviceValueNames[1];
-        string += F(":");
+        string += F(":</div><div class=\"div_r\">");
         string += Plugin_003_pulseTotalCounter[event->TaskIndex];
-        string += F("<BR>");
+        string += F("</div><div class=\"div_br\"></div><div class=\"div_l\">");
         string += ExtraTaskSettings.TaskDeviceValueNames[2];
-        string += F(":");
+        string += F(":</div><div class=\"div_r\">");
         string += Plugin_003_pulseTime[event->TaskIndex];
+        string += F("</div>");
         success = true;
         break;
       }
