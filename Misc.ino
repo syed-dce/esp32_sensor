@@ -796,6 +796,7 @@ void SaveToFlash(int index, byte* memAddress, int datasize)
   delete [] data;
   String log = F("FLASH: Settings saved");
   addLog(LOG_LEVEL_INFO, log);
+  flashWrites++;
 }
 
 
@@ -975,6 +976,7 @@ void ResetFactory(void)
   Settings.MessageDelay = 1000;
   Settings.deepSleep = false;
   Settings.CustomCSS = false;
+  Settings.InitSPI = false;
   for (byte x = 0; x < TASKS_MAX; x++)
   {
     Settings.TaskDevicePin1[x] = -1;
@@ -1960,6 +1962,12 @@ void rulesProcessing(String& event)
           // process the action if it's a command and unconditional, or conditional and the condition matches the if or else block.
           if (isCommand && ((!conditional) || (conditional && (condition == ifBranche))))
           {
+            int equalsPos = event.indexOf("=");
+            if (equalsPos > 0)
+            {
+              String tmpString = event.substring(equalsPos+1);
+              action.replace("%eventvalue%",tmpString); // substitute %eventvalue% in actions with the actual value from the event
+            }
             log = F("ACT  : ");
             log += action;
             addLog(LOG_LEVEL_INFO, log);
@@ -1996,6 +2004,15 @@ boolean ruleMatch(String& event, String& rule)
   boolean match = false;
   String tmpEvent = event;
   String tmpRule = rule;
+
+  // Special handling of literal string events, they should start with '!'
+  if (event.charAt(0) == '!')
+  {
+    if (event.equalsIgnoreCase(rule))
+        return true;
+    else
+        return false;
+  }
 
   if (event.startsWith("Clock#Time")) // clock events need different handling...
   {

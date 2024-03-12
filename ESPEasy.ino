@@ -55,9 +55,6 @@
 //   MSP5611 I2C temp/baro sensor
 //   BMP280 I2C Barometric Pressure sensor
 //   SHT1X temperature/humidity sensors
-
-//   Experimental/Preliminary:
-//   =========================
 //   Ser2Net server
 
 // ********************************************************************************
@@ -113,7 +110,7 @@
 #define ESP_PROJECT_PID           2015050101L
 #define ESP_EASY
 #define VERSION                             9
-#define BUILD                             130
+#define BUILD                             135
 #define BUILD_NOTES                        ""
 #define FEATURE_SPIFFS                  false
 
@@ -211,6 +208,7 @@
 #include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
@@ -334,6 +332,7 @@ struct SettingsStruct
   unsigned long ConnectionFailuresThreshold;
   int16_t       TimeZone;
   boolean       MQTTRetainFlag;
+  boolean       InitSPI; 
 } Settings;
 
 struct ExtraTaskSettingsStruct
@@ -401,6 +400,8 @@ struct NodeStruct
 {
   byte ip[4];
   byte age;
+  uint16_t build;
+  char* nodeName;
 } Nodes[UNIT_MAX];
 
 struct systemTimerStruct
@@ -475,6 +476,8 @@ unsigned long elapsed = 0;
 unsigned long loopCounter = 0;
 unsigned long loopCounterLast = 0;
 unsigned long loopCounterMax = 1;
+
+unsigned long flashWrites = 0;
 
 String eventBuffer = "";
 

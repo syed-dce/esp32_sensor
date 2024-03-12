@@ -238,6 +238,9 @@ void handle_root() {
     reply += ESP.getFlashChipRealSize() / 1024; //ESP.getFlashChipSize();
     reply += F(" kB");
 
+    reply += F("<TR><TD>Flash Writes (since boot):<TD>");
+    reply += flashWrites;
+
     reply += F("<TR><TD>Sketch Size/Free:<TD>");
     reply += ESP.getSketchSize() / 1024;
     reply += F(" kB / ");
@@ -261,23 +264,27 @@ void handle_root() {
         break;
     }
 
-    reply += F("<TR><TH>Node List:<TH>IP<TH>Age<TR><TD><TD>");
+    reply += F("<TR><TH>Node List:<TH>Name<TH>Build<TH>IP<TH>Age<TR><TD><TD>");
     for (byte x = 0; x < UNIT_MAX; x++)
     {
       if (Nodes[x].ip[0] != 0)
       {
-        if (x == Settings.Unit)
-          reply += F("<font color='blue'>");
         char url[80];
         sprintf_P(url, PSTR("<a href='http://%u.%u.%u.%u'>%u.%u.%u.%u</a>"), Nodes[x].ip[0], Nodes[x].ip[1], Nodes[x].ip[2], Nodes[x].ip[3], Nodes[x].ip[0], Nodes[x].ip[1], Nodes[x].ip[2], Nodes[x].ip[3]);
         reply += F("<TR><TD>Unit ");
         reply += x;
-        reply += F(":<TD>");
+        reply += F("<TD>");
+        if (x != Settings.Unit)
+          reply += Nodes[x].nodeName;
+        else
+          reply += Settings.Name;
+        reply += F("<TD>");
+        if (Nodes[x].build)
+          reply += Nodes[x].build;
+        reply += F("<TD>");
         reply += url;
         reply += F("<TD>");
         reply += Nodes[x].age;
-        if (x == Settings.Unit)
-          reply += F("</font color>");
       }
     }
 
@@ -408,7 +415,7 @@ void handle_config() {
   reply += SecuritySettings.Password;
   reply += F("'><TR><TD>SSID:<TD><input type='text' name='ssid' value='");
   reply += SecuritySettings.WifiSSID;
-  reply += F("'><TR><TD>WPA Key:<TD><input type='text' maxlength='63' name='key' value='");
+  reply += F("'><TR><TD>WPA Key:<TD><input type='password' maxlength='63' name='key' value='");
   reply += SecuritySettings.WifiKey;
 
   reply += F("'><TR><TD>WPA AP Mode Key:<TD><input type='text' maxlength='63' name='apkey' value='");
@@ -558,6 +565,8 @@ void handle_hardware() {
     Settings.PinBootStates[14] =  WebServer.arg("p14").toInt();
     Settings.PinBootStates[15] =  WebServer.arg("p15").toInt();
     Settings.PinBootStates[16] =  WebServer.arg("p16").toInt();
+    
+    Settings.InitSPI = WebServer.arg("initspi") == "on";      // SPI Init
 
     SaveSettings();
   }
@@ -572,6 +581,14 @@ void handle_hardware() {
   addPinSelect(true, reply, "psda", Settings.Pin_i2c_sda);
   reply += F("<TR><TD>SCL:<TD>");
   addPinSelect(true, reply, "pscl", Settings.Pin_i2c_scl);
+  
+  // SPI Init
+  reply += F("<TR><TD>Init SPI:<TD>");
+  if (Settings.InitSPI)
+    reply += F("<input type=checkbox id='initspi'  name='initspi' checked>&nbsp;");
+  else
+    reply += F("<input type=checkbox id='initspi' name='initspi'>&nbsp;");
+  reply += F("(Note : Chip Select (CS) config must be done in the plugin)");
 
   reply += F("<TR><TD>GPIO boot states:<TD>");
   reply += F("<TR><TD>Pin mode 0:<TD>");
@@ -1210,19 +1227,19 @@ void addPinSelect(boolean forI2C, String& str, String name,  int choice)
 {
   String options[14];
   options[0] = F(" ");
-  options[1] = F("GPIO-0");
-  options[2] = F("GPIO-1");
-  options[3] = F("GPIO-2");
-  options[4] = F("GPIO-3");
-  options[5] = F("GPIO-4");
-  options[6] = F("GPIO-5");
-  options[7] = F("GPIO-9");
-  options[8] = F("GPIO-10");
-  options[9] = F("GPIO-12");
-  options[10] = F("GPIO-13");
-  options[11] = F("GPIO-14");
-  options[12] = F("GPIO-15");
-  options[13] = F("GPIO-16");
+  options[1] = F("GPIO-0 (D3)");
+  options[2] = F("GPIO-1 (D10)");
+  options[3] = F("GPIO-2 (D4)");
+  options[4] = F("GPIO-3 (D9)");
+  options[5] = F("GPIO-4 (D2)");
+  options[6] = F("GPIO-5 (D1)");
+  options[7] = F("GPIO-9 (D11)");
+  options[8] = F("GPIO-10 (D12)");
+  options[9] = F("GPIO-12 (D6)");
+  options[10] = F("GPIO-13 (D7)");
+  options[11] = F("GPIO-14 (D5)");
+  options[12] = F("GPIO-15 (D8)");
+  options[13] = F("GPIO-16 (D0)");
   int optionValues[14];
   optionValues[0] = -1;
   optionValues[1] = 0;
@@ -2330,6 +2347,7 @@ void handleFileUpload()
         }
       interrupts();
       delay(10);
+      flashWrites++;
     }
     page++;
   }
@@ -2545,12 +2563,13 @@ void handle_rules() {
         //Serial.println("flash save ok");
       }
     interrupts();
+    flashWrites++;
 #endif
   }
 
   // load form data from flash
   reply += F("<form method='post'>");
-  reply += F("<textarea name='rules' rows='15' cols='80' wrap='on'>");
+  reply += F("<textarea name='rules' rows='15' cols='80' wrap='off'>");
 
 #if FEATURE_SPIFFS
   File f = SPIFFS.open("rules.txt", "r+");
