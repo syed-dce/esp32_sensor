@@ -87,7 +87,7 @@ void addHeader(boolean showMenu, String& str)
 
   str += F("</head>");
 
-  str += F("<h1>Welcome to ESP Easy Mega: ");
+  str += F("<h1>Welcome");
   str += Settings.Name;
 
   f = SPIFFS.open("esp.png", "r");
