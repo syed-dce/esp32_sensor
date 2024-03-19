@@ -1,9 +1,41 @@
+
 void deepSleep(int delay)
 {
+  String log;
+
+  //cancel deep sleep loop by pulling the pin GPIO16(D0) to GND
+  //recommended wiring: 3-pin-header with 1=RST, 2=D0, 3=GND
+  //                    short 1-2 for normal deep sleep / wakeup loop
+  //                    short 2-3 to cancel sleep loop for modifying settings
+  pinMode(16,INPUT_PULLUP);
+  if (!digitalRead(16))
+  {
+    log = F("Deep sleep canceled by GPIO16(D0)=LOW.");
+    addLog(LOG_LEVEL_INFO, log);
+    return;
+  }
+
+  //first time deep sleep? offer a way to escape
+  if (lastBootCause!=BOOT_CAUSE_DEEP_SLEEP)
+  {
+    log = F("Entering deep sleep in 30 seconds.");
+    addLog(LOG_LEVEL_INFO, log);
+    delayMillis(30000);
+    //disabled?
+    if (!Settings.deepSleep)
+    {
+      log = F("Deep sleep disabled.");
+      addLog(LOG_LEVEL_INFO, log);
+      return;
+    }
+  }
+
+  log = F("Entering deep sleep...");
+  addLog(LOG_LEVEL_INFO, log);
+
   RTC.deepSleepState = 1;
   saveToRTC();
-  String log = F("Enter deep sleep...");
-  addLog(LOG_LEVEL_INFO, log);
+
   String event = F("System#Sleep");
   rulesProcessing(event);
   ESP.deepSleep(delay * 1000000, WAKE_RF_DEFAULT);
@@ -439,7 +471,7 @@ void fileSystemCheck()
 {
   if (SPIFFS.begin())
   {
-    String log = F("SPIFFS Mount successful");
+    String log = F("FS   : Mount successful");
     addLog(LOG_LEVEL_INFO, log);
     fs::File f = SPIFFS.open("config.dat", "r");
     if (!f)
@@ -449,9 +481,9 @@ void fileSystemCheck()
   }
   else
   {
-    String log = F("SPIFFS Mount failed");
+    String log = F("FS   : Mount failed");
     Serial.println(log);
-    addLog(LOG_LEVEL_INFO, log);
+    addLog(LOG_LEVEL_ERROR, log);
   }
 }
 
@@ -810,12 +842,12 @@ void ResetFactory(void)
 
   //always format on factory reset, in case of corrupt SPIFFS
   SPIFFS.end();
-  Serial.println(F("formatting..."));
+  Serial.println(F("FS   : formatting..."));
   SPIFFS.format();
-  Serial.println(F("formatting done..."));
+  Serial.println(F("FS   : formatting done..."));
   if (!SPIFFS.begin())
   {
-    Serial.println(F("FORMATTING SPIFFS FAILED!"));
+    Serial.println(F("FS   : FORMATTING SPIFFS FAILED!"));
     return;
   }
 
@@ -1824,6 +1856,13 @@ unsigned long getNtpTime()
   \*********************************************************************************************/
 void rulesProcessing(String& event)
 {
+  unsigned long timer = millis();
+  String log = "";
+
+  log = F("EVENT: ");
+  log += event;
+  addLog(LOG_LEVEL_INFO, log);
+
   for (byte x = 1; x < RULESETS_MAX + 1; x++)
   {
     String fileName = F("rules");
@@ -1832,6 +1871,12 @@ void rulesProcessing(String& event)
     if (SPIFFS.exists(fileName))
       rulesProcessingFile(fileName, event);
   }
+
+  log = F("EVENT: Processing time:");
+  log += millis() - timer;
+  log += F(" milliSeconds");
+  addLog(LOG_LEVEL_DEBUG, log);
+
 }
 
 /********************************************************************************************\
@@ -1839,7 +1884,6 @@ void rulesProcessing(String& event)
   \*********************************************************************************************/
 void rulesProcessingFile(String fileName, String& event)
 {
-  unsigned long timer = millis();
   fs::File f = SPIFFS.open(fileName, "r+");
   if (!f)
     return;
@@ -1857,9 +1901,6 @@ void rulesProcessingFile(String fileName, String& event)
     return;
   }
 
-  log = F("EVENT: ");
-  log += event;
-  addLog(LOG_LEVEL_INFO, log);
 
   int pos = 0;
   String line = "";
@@ -1990,13 +2031,7 @@ void rulesProcessingFile(String fileName, String& event)
   }
 
   nestingLevel--;
-  if (nestingLevel == 0)
-  {
-    log = F("EVENT: Processing time:");
-    log += millis() - timer;
-    log += F(" milliSeconds");
-    addLog(LOG_LEVEL_INFO, log);
-  }
+
 }
 
 
@@ -2190,7 +2225,7 @@ void rulesTimers()
   {
     if (RulesTimer[x] != 0L) // timer active?
     {
-      if (RulesTimer[x] < millis()) // timer finished?
+      if (RulesTimer[x] <= millis()) // timer finished?
       {
         RulesTimer[x] = 0L; // turn off this timer
         String event = F("Rules#Timer=");
@@ -2409,5 +2444,58 @@ void play_rtttl(uint8_t _pin, char *p )
     }
   }
 }
+
+#endif
+
+
+#ifdef FEATURE_ARDUINO_OTA
+/********************************************************************************************\
+  Allow updating via the Arduino OTA-protocol. (this allows you to upload directly from platformio)
+  \*********************************************************************************************/
+
+void ArduinoOTAInit()
+{
+  // Default port is 8266
+  ArduinoOTA.setPort(8266);
+
+  if (SecuritySettings.Password[0]!=0)
+    ArduinoOTA.setPassword(SecuritySettings.Password);
+
+  ArduinoOTA.onStart([]() {
+      Serial.println(F("OTA  : Start upload"));
+      SPIFFS.end(); //important, otherwise it fails
+  });
+
+  ArduinoOTA.onEnd([]() {
+      Serial.println(F("\nOTA  : End"));
+      //"dangerous": if you reset during flash you have to reflash via serial
+      //so dont touch device until restart is complete
+      Serial.println(F("\nOTA  : DO NOT RESET OR POWER OFF UNTIL BOOT+FLASH IS COMPLETE."));
+      delay(100);
+      ESP.reset();
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+
+      Serial.printf("OTA  : Progress %u%%\r", (progress / (total / 100)));
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+      Serial.print(F("\nOTA  : Error (will reboot): "));
+      if (error == OTA_AUTH_ERROR) Serial.println(F("Auth Failed"));
+      else if (error == OTA_BEGIN_ERROR) Serial.println(F("Begin Failed"));
+      else if (error == OTA_CONNECT_ERROR) Serial.println(F("Connect Failed"));
+      else if (error == OTA_RECEIVE_ERROR) Serial.println(F("Receive Failed"));
+      else if (error == OTA_END_ERROR) Serial.println(F("End Failed"));
+
+      delay(100);
+      ESP.reset();
+  });
+  ArduinoOTA.begin();
+
+  String log = F("OTA  : Arduino OTA enabled on port 8266");
+  addLog(LOG_LEVEL_INFO, log);
+
+}
+
 
 #endif
