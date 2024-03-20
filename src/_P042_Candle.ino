@@ -2,10 +2,6 @@
 //######################################## Plugin 042: NeoPixel Candle ##################################
 //#######################################################################################################
 
-// PROJECT INFO
-// Wifi Candle for ESPEasy by Dominik Schmidt (10.2016)
-
-
 // INCLUDE jscolor (http://jscolor.com/)
 //   * Download the lib from here: http://jscolor.com/release/latest.zip
 //   * Extract jscolor.min.js
