@@ -787,7 +787,7 @@ void loop()
         serial();
 
   // Deep sleep mode, just run all tasks one time and go back to sleep as fast as possible
-  if (Settings.deepSleep)
+  if (isDeepSleepEnabled())
   {
       run50TimesPerSecond();
       run10TimesPerSecond();
@@ -811,9 +811,8 @@ void loop()
 
     if (millis() > timer1s)
       runOncePerSecond();
-
-    backgroundtasks();
   }
+  backgroundtasks();
 
 }
 
@@ -962,12 +961,13 @@ void runEach30Seconds()
 \*********************************************************************************************/
 void checkSensors()
 {
+  bool isDeepSleep = isDeepSleepEnabled();
   //check all the devices and only run the sendtask if its time, or we if we used deep sleep mode
   for (byte x = 0; x < TASKS_MAX; x++)
   {
     if (
         (Settings.TaskDeviceTimer[x] != 0) &&
-        (Settings.deepSleep || (millis() > timerSensor[x]))
+        (isDeepSleep || (millis() > timerSensor[x]))
     )
     {
       timerSensor[x] = millis() + Settings.TaskDeviceTimer[x] * 1000;
