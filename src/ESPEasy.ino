@@ -9,7 +9,7 @@
  * IDE download    : https://www.arduino.cc/en/Main/Software
  * ESP8266 Package : https://github.com/esp8266/Arduino
  *
-* Additional information about licensing can be found at : http://www.gnu.org/licenses
+ * Additional information about licensing can be found at : http://www.gnu.org/licenses
 \*************************************************************************************************************************/
 
 // This file incorporates work covered by the following copyright and permission notice:
@@ -107,6 +107,11 @@
 //Normally only enabled for the platformio dev environment, since its helpfull while developing.
 // #define FEATURE_ARDUINO_OTA
 
+
+//enable reporting status to ESPEasy developers.
+//this informs us of crashes and stability issues.
+// not finished yet!
+// #define FEATURE_REPORTING
 
 //Select which plugin sets you want to build.
 //These are normally automaticly set via the Platformio build environment.
@@ -295,6 +300,7 @@ extern "C" {
 bool ArduinoOTAtriggered=false;
 #endif
 
+
 // Setup DNS, only used if the ESP has no valid WiFi config
 const byte DNS_PORT = 53;
 IPAddress apIP(192, 168, 4, 1);
@@ -310,6 +316,8 @@ ESP8266WebServer WebServer(80);
 
 // syslog stuff
 WiFiUDP portUDP;
+
+
 
 extern "C" {
 #include "spi_flash.h"
@@ -676,6 +684,9 @@ void setup()
   if (!WifiConnect(true,3))
     WifiConnect(false,3);
 
+  #ifdef FEATURE_REPORTING
+  ReportStatus();
+  #endif
 
   //After booting, we want all the tasks to run without delaying more than neccesary.
   //Plugins that need an initial startup delay need to overwrite their initial timerSensor value in PLUGIN_INIT
@@ -824,7 +835,7 @@ void run50TimesPerSecond()
   timer20ms = millis() + 20;
   PluginCall(PLUGIN_FIFTY_PER_SECOND, 0, dummyString);
 
-  statusLED(false);
+  // statusLED(false);
 }
 
 /*********************************************************************************************\
@@ -952,6 +963,10 @@ void runEach30Seconds()
     loopCounterMax = loopCounterLast;
 
   WifiCheck();
+
+  #ifdef FEATURE_REPORTING
+  ReportStatus();
+  #endif
 
 }
 
@@ -1156,4 +1171,6 @@ void backgroundtasks()
   #endif
 
   yield();
+
+  statusLED(false);
 }
