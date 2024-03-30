@@ -407,6 +407,7 @@ struct SettingsStruct
   boolean       NotificationEnabled[NOTIFICATION_MAX];
   unsigned int  TaskDeviceID[CONTROLLER_MAX][TASKS_MAX];
   boolean       TaskDeviceSendData[CONTROLLER_MAX][TASKS_MAX];
+  boolean       Pin_status_led_Inversed;
 } Settings;
 
 struct ControllerSettingsStruct
@@ -629,6 +630,7 @@ void setup()
   lowestRAM = FreeMem();
 
   Serial.begin(115200);
+  // Serial.print("\n\n\nBOOOTTT\n\n\n");
 
   initLog();
 
@@ -795,10 +797,6 @@ void loop()
     wifiSetupConnect = false;
   }
 
-  if (Settings.UseSerial)
-    if (Serial.available())
-      if (!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString))
-        serial();
 
   // Deep sleep mode, just run all tasks one time and go back to sleep as fast as possible
   if (isDeepSleepEnabled())
@@ -1155,6 +1153,11 @@ boolean checkSystemTimers()
 \*********************************************************************************************/
 void backgroundtasks()
 {
+  if (Settings.UseSerial)
+    if (Serial.available())
+      if (!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString))
+        serial();
+
   // process DNS, only used if the ESP has no valid WiFi config
   if (wifiSetup)
     dnsServer.processNextRequest();
