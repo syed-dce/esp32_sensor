@@ -2,6 +2,7 @@
 //######################################## Plugin 042: NeoPixel Candle ##################################
 //#######################################################################################################
 
+
 // INCLUDE jscolor (http://jscolor.com/)
 //   * Download the lib from here: http://jscolor.com/release/latest.zip
 //   * Extract jscolor.min.js
