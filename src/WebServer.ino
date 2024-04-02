@@ -122,7 +122,7 @@ void addHeader(boolean showMenu, String& str)
 //********************************************************************************
 void addFooter(String& str)
 {
-  str += F("<h6>Powered by www.letscontrolit.com</h6></body>");
+  str += F("<h6>Powered by www.esp.com</h6></body>");
 }
 
 
@@ -382,7 +382,7 @@ void handle_config() {
   addFormSubHeader(reply, F("Sleep Mode"));
 
   addFormCheckBox(reply, F("Sleep enabled"), F("deepsleep"), Settings.deepSleep);
-  reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/SleepMode\" target=\"_blank\">?</a>");
+  reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/SleepMode\" target=\"_blank\">?</a>");
   addFormNumericBox(reply, F("Sleep Delay"), F("delay"), Settings.Delay);
   reply += F(" (sec)");
 
@@ -441,7 +441,9 @@ void handle_controllers() {
       if (Settings.Protocol != 0)
       {
         byte ProtocolIndex = getProtocolIndex(Settings.Protocol[index - 1]);
-        CPlugin_ptr[ProtocolIndex](CPLUGIN_WEBFORM_SAVE, 0, dummyString);
+        TempEvent.ControllerIndex = index - 1;
+        TempEvent.ProtocolIndex = ProtocolIndex;
+        CPlugin_ptr[ProtocolIndex](CPLUGIN_WEBFORM_SAVE, &TempEvent, dummyString);
         ControllerSettings.UseDNS = usedns.toInt();
         if (ControllerSettings.UseDNS)
         {
@@ -539,7 +541,7 @@ void handle_controllers() {
       }
     }
     reply += F("</select>");
-    reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyProtocols\" target=\"_blank\">?</a>");
+    reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/EasyProtocols\" target=\"_blank\">?</a>");
 
 
     char str[20];
@@ -616,7 +618,8 @@ void handle_controllers() {
 
       addFormCheckBox(reply, F("Enabled"), F("controllerenabled"), Settings.ControllerEnabled[index - 1]);
 
-      TempEvent.ProtocolIndex = index - 1;
+      TempEvent.ControllerIndex = index - 1;
+      TempEvent.ProtocolIndex = ProtocolIndex;
       CPlugin_ptr[ProtocolIndex](CPLUGIN_WEBFORM_LOAD, &TempEvent, reply);
 
     }
@@ -755,7 +758,7 @@ void handle_notifications() {
       reply += F("</option>");
     }
     reply += F("</select>");
-    reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyNotifications\" target=\"_blank\">?</a>");
+    reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/EasyNotifications\" target=\"_blank\">?</a>");
 
 
     char str[20];
@@ -1283,7 +1286,7 @@ void handle_devices() {
 
     if (Settings.TaskDeviceNumber[index - 1] != 0 )
     {
-      reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/Plugin");
+      reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/Plugin");
       reply += Settings.TaskDeviceNumber[index - 1];
       reply += F("\" target=\"_blank\">?</a>");
 
@@ -1412,7 +1415,7 @@ void handle_devices() {
           }
 
           if (varNr == 0)
-            reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyFormula\" target=\"_blank\">?</a>");
+            reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/EasyFormula\" target=\"_blank\">?</a>");
         }
       }
     }
@@ -1977,7 +1980,7 @@ void handle_tools() {
   if (ESP.getFlashChipRealSize() > 524288)
   {
     reply += F("<TR><TD>Firmware<TD><a class=\"button-link\" href=\"/update\">Load</a>");
-    reply += F("<a class=\"button-link\" href=\"http://www.letscontrolit.com/wiki/index.php/EasyOTA\" target=\"_blank\">?</a>");
+    reply += F("<a class=\"button-link\" href=\"http://www.esp.com/wiki/index.php/EasyOTA\" target=\"_blank\">?</a>");
   }
   reply += F("<TR><TD>Filesystem<TD><a class=\"button-link\" href=\"/filelist\">Flash</a>");
   reply += F("<a class=\"button-link\" href=\"/SDfilelist\">SD Card</a><BR><BR>");

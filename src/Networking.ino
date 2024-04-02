@@ -48,8 +48,10 @@ struct dataStruct
   float Values[VARS_PER_TASK];
 };
 
+//TODO: add sysinfoStruct
+
 /*********************************************************************************************\
-   Check UDP messages
+   Check UDP messages (ESPEasy propiertary protocol)
   \*********************************************************************************************/
 void checkUDP()
 {
@@ -98,6 +100,8 @@ void checkUDP()
       // binary data!
       switch (packetBuffer[1])
       {
+
+        //TODO: use a nice struct for it
         case 1: // sysinfo message
           {
             byte mac[6];
@@ -289,7 +293,7 @@ void SendUDPCommand(byte destUnit, char* data, byte dataLength)
 
 
 /*********************************************************************************************\
-   Send UDP message
+   Send UDP message (unit 255=broadcast)
   \*********************************************************************************************/
 void sendUDP(byte unit, byte* data, byte size)
 {
@@ -330,12 +334,16 @@ void refreshNodeList()
   }
 }
 
+/*********************************************************************************************\
+   Broadcast system info to other nodes. (to update node lists)
+  \*********************************************************************************************/
 void sendSysInfoUDP(byte repeats)
 {
   char log[80];
   if (Settings.UDPPort == 0)
     return;
 
+  // TODO: make a nice struct of it and clean up
   // 1 byte 'binary token 255'
   // 1 byte id '1'
   // 6 byte mac
@@ -431,9 +439,9 @@ void SSDP_schema(WiFiClient client) {
                    "<modelNumber>");
   ssdp_schema += BUILD_GIT;
   ssdp_schema += F("</modelNumber>"
-                   "<modelURL>http://www.letscontrolit.com</modelURL>"
-                   "<manufacturer>http://www.letscontrolit.com</manufacturer>"
-                   "<manufacturerURL>http://www.letscontrolit.com</manufacturerURL>"
+                   "<modelURL>http://www.esp.com</modelURL>"
+                   "<manufacturer>http://www.esp.com</manufacturer>"
+                   "<manufacturerURL>http://www.esp.com</manufacturerURL>"
                    "<UDN>uuid:");
   ssdp_schema += uuid;
   ssdp_schema += F("</UDN></device>"
