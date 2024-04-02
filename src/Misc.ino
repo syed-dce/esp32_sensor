@@ -23,14 +23,14 @@ bool isDeepSleepEnabled()
   //                    short 2-3 to cancel sleep loop for modifying settings
   pinMode(16,INPUT_PULLUP);
   if (!digitalRead(16))
+  {
     return false;
-
+  }
   return true;
 }
 
 void deepSleep(int delay)
 {
-  String log;
 
   if (!isDeepSleepEnabled())
   {
@@ -41,20 +41,17 @@ void deepSleep(int delay)
   //first time deep sleep? offer a way to escape
   if (lastBootCause!=BOOT_CAUSE_DEEP_SLEEP)
   {
-    log = F("Entering deep sleep in 30 seconds.");
-    addLog(LOG_LEVEL_INFO, log);
+    addLog(LOG_LEVEL_INFO, F("SLEEP: Entering deep sleep in 30 seconds."));
     delayBackground(30000);
     //disabled?
     if (!isDeepSleepEnabled())
     {
-      log = F("Deep sleep disabled.");
-      addLog(LOG_LEVEL_INFO, log);
+      addLog(LOG_LEVEL_INFO, F("SLEEP: Deep sleep cancelled (GPIO16 connected to GND)"));
       return;
     }
   }
 
-  log = F("Entering deep sleep...");
-  addLog(LOG_LEVEL_INFO, log);
+  addLog(LOG_LEVEL_INFO, F("SLEEP: Entering deep sleep..."));
 
   RTC.deepSleepState = 1;
   saveToRTC();
@@ -442,10 +439,14 @@ void parseCommandString(struct EventStruct *event, String& string)
   event->Par1 = 0;
   event->Par2 = 0;
   event->Par3 = 0;
+  event->Par4 = 0;
+  event->Par5 = 0;
 
   if (GetArgv(command, TmpStr1, 2)) event->Par1 = str2int(TmpStr1);
   if (GetArgv(command, TmpStr1, 3)) event->Par2 = str2int(TmpStr1);
   if (GetArgv(command, TmpStr1, 4)) event->Par3 = str2int(TmpStr1);
+  if (GetArgv(command, TmpStr1, 5)) event->Par4 = str2int(TmpStr1);
+  if (GetArgv(command, TmpStr1, 6)) event->Par5 = str2int(TmpStr1);
 }
 
 /********************************************************************************************\
@@ -1156,20 +1157,47 @@ boolean readFromRTC()
 
 /********************************************************************************************\
   Save values to RTC memory
-  \*********************************************************************************************/
+\*********************************************************************************************/
 #define RTC_BASE_USERVAR 74
 boolean saveUserVarToRTC()
 {
-  return(system_rtc_mem_write(RTC_BASE_USERVAR, (byte*)&UserVar, sizeof(UserVar)));
+  //addLog(LOG_LEVEL_DEBUG, F("RTCMEM: saveUserVarToRTC"));
+  byte* buffer = (byte*)&UserVar;
+  size_t size = sizeof(UserVar);
+  uint32 sum = getChecksum(buffer, size);
+  boolean ret = system_rtc_mem_write(RTC_BASE_USERVAR, buffer, size);
+  ret &= system_rtc_mem_write(RTC_BASE_USERVAR+(size>>2), (byte*)&sum, 4);
+  return ret;
 }
 
 
 /********************************************************************************************\
   Read RTC struct from RTC memory
-  \*********************************************************************************************/
+\*********************************************************************************************/
 boolean readUserVarFromRTC()
 {
-  return(system_rtc_mem_read(RTC_BASE_USERVAR, (byte*)&UserVar, sizeof(UserVar)));
+  //addLog(LOG_LEVEL_DEBUG, F("RTCMEM: readUserVarFromRTC"));
+  byte* buffer = (byte*)&UserVar;
+  size_t size = sizeof(UserVar);
+  boolean ret = system_rtc_mem_read(RTC_BASE_USERVAR, buffer, size);
+  uint32 sumRAM = getChecksum(buffer, size);
+  uint32 sumRTC = 0;
+  ret &= system_rtc_mem_read(RTC_BASE_USERVAR+(size>>2), (byte*)&sumRTC, 4);
+  if (!ret || sumRTC != sumRAM)
+  {
+    addLog(LOG_LEVEL_ERROR, F("RTC  : Checksum error on reading RTC user var"));
+    memset(buffer, 0, size);
+  }
+  return ret;
+}
+
+
+uint32 getChecksum(byte* buffer, size_t size)
+{
+  uint32 sum = 0x82662342;   //some magic to avoid valid checksum on new, uninitialized ESP
+  for (size_t i=0; i<size; i++)
+    sum += buffer[i];
+  return sum;
 }
 
 
@@ -1278,6 +1306,68 @@ String timeLong2String(unsigned long lngTime)
   return time;
 }
 
+// returns the current Date separated by the given delimiter
+// date format example with '-' delimiter: 2016-12-31 (YYYY-MM-DD)
+String getDateString(char delimiter)
+{
+  String reply = String(year());
+  if (delimiter != '\0')
+  	reply += delimiter;
+  if (month() < 10)
+    reply += "0";
+  reply += month();
+  if (delimiter != '\0')
+  	reply += delimiter;
+  if (day() < 10)
+  	reply += F("0");
+  reply += day();
+  return reply;
+}
+
+// returns the current Date without delimiter
+// date format example: 20161231 (YYYYMMDD)
+String getDateString()
+{
+	return getDateString('\0');
+}
+
+// returns the current Time separated by the given delimiter
+// time format example with ':' delimiter: 23:59:59 (HH:MM:SS)
+String getTimeString(char delimiter)
+{
+	String reply;
+	if (hour() < 10)
+		reply += F("0");
+  reply += String(hour());
+  if (delimiter != '\0')
+  	reply += delimiter;
+  if (minute() < 10)
+    reply += F("0");
+  reply += minute();
+  if (delimiter != '\0')
+  	reply += delimiter;
+  reply += second();
+  return reply;
+}
+
+// returns the current Time without delimiter
+// time format example: 235959 (HHMMSS)
+String getTimeString()
+{
+	return getTimeString('\0');
+}
+
+// returns the current Date and Time separated by the given delimiter
+// if called like this: getDateTimeString('\0', '\0', '\0');
+// it will give back this: 20161231235959  (YYYYMMDDHHMMSS)
+String getDateTimeString(char dateDelimiter, char timeDelimiter,  char dateTimeDelimiter)
+{
+	String ret = getDateString(dateDelimiter);
+	if (dateTimeDelimiter != '\0')
+		ret += dateTimeDelimiter;
+	ret += getTimeString(timeDelimiter);
+	return ret;
+}
 
 /********************************************************************************************\
   Match clock event
@@ -1395,15 +1485,7 @@ String parseTemplate(String &tmpString, byte lineSize)
   // replace other system variables like %sysname%, %systime%, %ip%
   newString.replace(F("%sysname%"), Settings.Name);
 
-  String strTime = "";
-  if (hour() < 10)
-    strTime += " ";
-  strTime += hour();
-  strTime += ":";
-  if (minute() < 10)
-    strTime += "0";
-  strTime += minute();
-  newString.replace(F("%systime%"), strTime);
+  newString.replace(F("%systime%"), getTimeString(':'));
 
   newString.replace(F("%uptime%"), String(wdcounter / 2));
 
@@ -1825,6 +1907,11 @@ byte hour()
 byte minute()
 {
   return tm.Minute;
+}
+
+byte second()
+{
+	return tm.Second;
 }
 
 int weekday()

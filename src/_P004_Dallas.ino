@@ -55,6 +55,8 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         byte choice = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
         byte devCount = Plugin_004_DS_scan(choice, addr);
         string += F("<TR><TD>Device Nr:<TD><select name='plugin_004_dev'>");
+        //TODO addFormSelector(string, F("Device Nr"), F("plugin_004_dev"), devCount, options, NULL, choice);
+
         for (byte x = 0; x < devCount; x++)
         {
           string += F("<option value='");
@@ -78,6 +80,8 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
         }
 
         string += F("<TR><TD>Device Resolution:<TD><select name='plugin_004_res'>");
+        //TODO addFormSelector(string, F("Device Resolution"), F("plugin_004_res"), xxx, options, optionValues, choice);
+
         for (byte x = 9; x < 13; x++)
         {
           string += F("<option value='");
@@ -90,7 +94,7 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
           string += F("</option>");
         }
         string += F("</select> Bit");
-        
+
         success = true;
         break;
       }
@@ -98,15 +102,14 @@ boolean Plugin_004(byte function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_SAVE:
       {
         uint8_t addr[8];
-        String plugin1 = WebServer.arg(F("plugin_004_dev"));
-        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin1.toInt();
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("plugin_004_dev"));
 
         // find the address for selected device and store into extra tasksettings
         Plugin_004_DallasPin = Settings.TaskDevicePin1[event->TaskIndex];
         byte devCount = Plugin_004_DS_scan(Settings.TaskDevicePluginConfig[event->TaskIndex][0], addr);
         for (byte x = 0; x < 8; x++)
           ExtraTaskSettings.TaskDevicePluginConfigLong[x] = addr[x];
-          
+
           byte res = WebServer.arg("plugin_004_res").toInt();
           Plugin_004_DS_setResolution(addr, res);
 
@@ -321,7 +324,7 @@ boolean Plugin_004_DS_setResolution(uint8_t ROM[8], byte res)
         ScratchPad[4] = 0x1F; //  9 bit
         break;
     }
-    
+
     Plugin_004_DS_reset();
     Plugin_004_DS_write(0x55); // Choose ROM
     for (byte i = 0; i < 8; i++)
@@ -332,7 +335,7 @@ boolean Plugin_004_DS_setResolution(uint8_t ROM[8], byte res)
     Plugin_004_DS_write(ScratchPad[2]); // high alarm temp
     Plugin_004_DS_write(ScratchPad[3]); // low alarm temp
     Plugin_004_DS_write(ScratchPad[4]); // configuration register
-    
+
     Plugin_004_DS_write(0x55); // Choose ROM
     for (byte i = 0; i < 8; i++)
     {

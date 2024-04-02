@@ -290,6 +290,7 @@ ADC_MODE(ADC_VCC);
 #include "lwip/udp.h"
 #include "lwip/igmp.h"
 #include "include/UdpContext.h"
+#include "limits.h"
 
 extern "C" {
 #include "user_interface.h"
@@ -460,6 +461,8 @@ struct EventStruct
   int Par1;
   int Par2;
   int Par3;
+  int Par4;
+  int Par5;
   byte OriginTaskIndex;
   String String1;
   String String2;
@@ -781,6 +784,7 @@ void setup()
 
   RTC.deepSleepState=0;
   saveToRTC();
+
 
 }
 
