@@ -68,8 +68,6 @@
 #define DEFAULT_NAME        "newdevice"         // Enter your device friendly name
 #define DEFAULT_SSID        "ssid"              // Enter your network SSID
 #define DEFAULT_KEY         "wpakey"            // Enter your network WPA key
-#define DEFAULT_SERVER      "192.168.0.8"       // Enter your Domoticz Server IP address
-#define DEFAULT_PORT        8080                // Enter your Domoticz Server port value
 #define DEFAULT_DELAY       60                  // Enter your Send delay in seconds
 #define DEFAULT_AP_KEY      "configesp"         // Enter network WPA key for AP (config) mode
 
@@ -79,9 +77,12 @@
 #define DEFAULT_GW          "192.168.0.1"       // Enter your gateway
 #define DEFAULT_SUBNET      "255.255.255.0"     // Enter your subnet
 
-#define DEFAULT_MQTT_TEMPLATE false              // true or false enabled or disabled set mqqt sub and pub
-#define DEFAULT_MQTT_PUB    "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
-#define DEFAULT_MQTT_SUB    "sensors/espeasy/%sysname%/#" // Enter your sub
+#define DEFAULT_CONTROLLER   false              // true or false enabled or disabled, set 1st controller defaults
+// using a default template, you also need to set a DEFAULT PROTOCOL to a suitable MQTT protocol !
+#define DEFAULT_PUB         "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
+#define DEFAULT_SUB         "sensors/espeasy/%sysname%/#" // Enter your sub
+#define DEFAULT_SERVER      "192.168.0.8"       // Enter your Server IP address
+#define DEFAULT_PORT        8080                // Enter your Server port value
 
 #define DEFAULT_PROTOCOL    1                   // Protocol used for controller communications
 //   1 = Domoticz HTTP
@@ -193,12 +194,16 @@
 #define CMD_REBOOT                         89
 #define CMD_WIFI_DISCONNECT               135
 
-#define DEVICES_MAX                        64
+#if defined(PLUGIN_BUILD_TESTING) || defined(PLUGIN_BUILD_DEV)
+  #define DEVICES_MAX                      72
+#else
+  #define DEVICES_MAX                      64
+#endif
 #define TASKS_MAX                          12 // max 12!
 #define CONTROLLER_MAX                      3 // max 4!
 #define NOTIFICATION_MAX                    3 // max 4!
 #define VARS_PER_TASK                       4
-#define PLUGIN_MAX                         64
+#define PLUGIN_MAX                DEVICES_MAX
 #define PLUGIN_CONFIGVAR_MAX                8
 #define PLUGIN_CONFIGFLOATVAR_MAX           4
 #define PLUGIN_CONFIGLONGVAR_MAX            4
@@ -791,7 +796,7 @@ void setup()
 
   // Setup MQTT Client
   byte ProtocolIndex = getProtocolIndex(Settings.Protocol[0]);
-  if (Protocol[ProtocolIndex].usesMQTT)
+  if (Protocol[ProtocolIndex].usesMQTT && Settings.ControllerEnabled[0])
     MQTTConnect();
 
   sendSysInfoUDP(3);
@@ -815,7 +820,7 @@ void setup()
     rulesProcessing(event);
   }
 
-
+  writeDefaultCSS();
 
 }
 
@@ -996,7 +1001,8 @@ void runEach30Seconds()
   addLog(LOG_LEVEL_INFO, log);
   sendSysInfoUDP(1);
   refreshNodeList();
-  MQTTCheck();
+  if(Settings.ControllerEnabled[0])
+    MQTTCheck();
   if (Settings.UseSSDP)
     SSDP_update();
 #if FEATURE_ADC_VCC
@@ -1216,7 +1222,8 @@ void backgroundtasks()
     dnsServer.processNextRequest();
 
   WebServer.handleClient();
-  MQTTclient.loop();
+  if(Settings.ControllerEnabled[0])
+    MQTTclient.loop();
   checkUDP();
 
   #ifdef FEATURE_ARDUINO_OTA
