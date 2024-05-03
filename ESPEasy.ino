@@ -50,16 +50,13 @@
 
 #define ESP_PROJECT_PID   2015050101L
 #define VERSION           1
-#define BUILD             3
+#define BUILD             6
 
-#define PIN_I2C_SDA       0
-#define PIN_I2C_SCL       2
-#define PIN_WIRED_IN_1    4
-#define PIN_WIRED_IN_2    5
-#define PIN_WIRED_OUT_1  12
-#define PIN_WIRED_OUT_2  13
+#define UDP_LISTEN_PORT   65500
+#define REBOOT_ON_MAX_CONNECTION_FAILURES  30
 
 #include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <Wire.h>
@@ -67,7 +64,10 @@
 
 ESP8266WebServer server(80);
 
-void(*Reboot)(void) = 0;
+// syslog stuff
+char packetBuffer[255];
+WiFiUDP portRX;
+WiFiUDP portTX;
 
 struct SettingsStruct
 {
@@ -89,36 +89,38 @@ struct SettingsStruct
   unsigned int  RFID;
   unsigned int  Analog;
   unsigned int  Pulse1;
+  byte          BoardType;
+  int8_t        Pin_i2c_sda;
+  int8_t        Pin_i2c_scl;
+  int8_t        Pin_wired_in_1;
+  int8_t        Pin_wired_in_2;
+  int8_t        Pin_wired_out_1;
+  int8_t        Pin_wired_out_2;
+  byte          Syslog_IP[4];
 } Settings;
 
 float UserVar[15];
 unsigned long timer;
 unsigned long timer100ms;
 unsigned long timer1s;
+unsigned long timerwd;
 unsigned int NC_Count = 0;
 unsigned int C_Count = 0;
 boolean AP_Mode = false;
 char ap_ssid[20];
 boolean cmd_disconnect = false;
+unsigned long connectionFailures;
 
 unsigned long pulseCounter1=0;
 
 void setup()
 {
   Serial.begin(19200);
-  Serial.print("\nINIT : Booting Build nr:");
+  Serial.print(F("\nINIT : Booting Build nr:"));
   Serial.println(BUILD);
 
   EEPROM.begin(4096);
-
-  Wire.pins(PIN_I2C_SDA, PIN_I2C_SCL);
-  Wire.begin();
-
-  pinMode(PIN_WIRED_IN_1, INPUT_PULLUP);
-  pinMode(PIN_WIRED_IN_2, INPUT_PULLUP);
-  pinMode(PIN_WIRED_OUT_1, OUTPUT);
-  pinMode(PIN_WIRED_OUT_2, OUTPUT);
-
+   
   LoadSettings();
   // if different version, eeprom settings structure has changed. Full Reset needed
   // on a fresh ESP module eeprom values are set to 255. Version results into -1 (signed int)
@@ -126,10 +128,41 @@ void setup()
   Serial.println(Settings.Version);
   if (Settings.Version != VERSION || Settings.PID != ESP_PROJECT_PID)
   {
-    Serial.println("INIT : Incorrect PID or version!");
+    Serial.println(F("INIT : Incorrect PID or version!"));
     delay(10000);
     ResetFactory();
   }
+
+  // configure hardware pins according to eeprom settings.
+  if (Settings.Pin_i2c_sda != -1)
+    {
+      Serial.println(F("INIT : I2C"));
+      Wire.begin(Settings.Pin_i2c_sda, Settings.Pin_i2c_scl);
+    }
+
+  if (Settings.Pin_wired_in_1 != -1)
+    {
+      Serial.println(F("INIT : Input 1"));
+      pinMode(Settings.Pin_wired_in_1, INPUT_PULLUP);
+    }
+    
+  if (Settings.Pin_wired_in_2 != -1)
+    {
+      Serial.println(F("INIT : Input 2"));
+      pinMode(Settings.Pin_wired_in_2, INPUT_PULLUP);
+    }
+
+  if (Settings.Pin_wired_out_1 != -1)
+    {
+      Serial.println(F("INIT : Output 1"));
+      pinMode(Settings.Pin_wired_out_1, OUTPUT);
+    }
+
+  if (Settings.Pin_wired_out_2 != -1)
+    {
+      Serial.println(F("INIT : Output 2"));
+      pinMode(Settings.Pin_wired_out_2, OUTPUT);
+    }
 
   // create unique AP SSID
   ap_ssid[0] = 0;
@@ -143,42 +176,82 @@ void setup()
   server.on("/", handle_root);
   server.on("/config", handle_config);
   server.on("/devices", handle_devices);
+  server.on("/hardware", handle_hardware);
+  server.on("/json.htm", handle_json);
   server.begin();
 
+  // Syslog
+  portRX.begin(UDP_LISTEN_PORT);
+  
   timer = millis() + 30000; // startup delay 30 sec
   timer100ms = millis() + 100; // timer for periodic actions 10 x per/sec
   timer1s = millis() + 1000; // timer for periodic actions once per/sec
+  timerwd = millis() + 30000; // timer for watchdog once per 30 sec
 
   if (Settings.RFID > 0)
-    rfidinit(PIN_WIRED_IN_1, PIN_WIRED_IN_2);
+    rfidinit(Settings.Pin_wired_in_1, Settings.Pin_wired_in_2);
 
   if (Settings.Pulse1 > 0)
-    pulseinit(PIN_WIRED_IN_1);
+    pulseinit(Settings.Pin_wired_in_1);
 
   // if a SSID is configured, try to connect to Wifi network
   if (strcasecmp(Settings.WifiSSID, "ssid") != 0)
-    WifiConnect();
+    {
+      WifiConnect();
+      // check if we got an ip address.
+      IPAddress ip = WiFi.localIP();
+      if (ip[0]==0) // dhcp issue ?
+        {
+          Serial.println(F("No IP!"));
+          delayedReboot(60);
+        }
+    }
   else
-  {
-    // Start Access Point for first config steps...
-    AP_Mode = true;
-    WifiAPMode(true);
-  }
-  Serial.println("INIT : Boot OK");
+    {
+      // Start Access Point for first config steps...
+      AP_Mode = true;
+      WifiAPMode(true);
+    }
+     
+  Serial.println(F("INIT : Boot OK"));
+  syslog((char*)"Boot");
 }
 
 void loop()
 {
-  yield();
   server.handleClient();
 
   if (Serial.available())
     serial();
     
+  // upd events    
+  int packetSize = portRX.parsePacket();
+  if (packetSize)
+    {
+      Serial.print("UDP  : " );
+      int len = portRX.read(packetBuffer, 255);
+      if (len > 0) packetBuffer[len] = 0;
+        {
+          Serial.println(packetBuffer);
+          ExecuteCommand(packetBuffer);
+        }
+    }
+    
   if (cmd_disconnect == true)
   {
     cmd_disconnect = false;
     WifiDisconnect();
+  }
+
+  // Watchdog trigger
+  if (millis() > timerwd)
+  {
+    timerwd = millis() + 30000;
+    char str[40];
+    str[0]=0;
+    sprintf(str,"WD %u CF %u FM %u", millis()/1000, connectionFailures, FreeMem());
+    Serial.println(str);
+    syslog(str);
   }
 
   // Perform regular checks, 10 times/sec
@@ -195,12 +268,20 @@ void loop()
     WifiCheck();
   }
 
-  // Check sensors and send data to controller when timer has elapsed
+  // Check sensors and send data to controller when sensor timer has elapsed
   if (millis() > timer)
   {
     timer = millis() + Settings.Delay * 1000;
     SensorSend();
   }
+
+  if(connectionFailures > REBOOT_ON_MAX_CONNECTION_FAILURES)
+  {
+    Serial.println(F("Too many connection failures"));
+    delayedReboot(60);
+  }
+  
+  delay(10);
 }
 
 void inputCheck()
@@ -255,13 +336,13 @@ void SensorSend()
     float value=0;
     if (Domoticz_getData(Settings.Pulse1, &value))
     {
-      Serial.print("Current Value:");
+      Serial.print(F("Current Value:"));
       Serial.println(value);
-      Serial.print("Delta Value:");
+      Serial.print(F("Delta Value:"));
       Serial.println(pulseCounter1);
       value=(value + pulseCounter1)*100;
       pulseCounter1=0;
-      Serial.print("New Value:");
+      Serial.print(F("New Value:"));
       Serial.println(value);
       UserVar[9 - 1] = value;  // store pulsecount to var 9
       Domoticz_sendData(1, Settings.Pulse1, 9);
@@ -269,4 +350,32 @@ void SensorSend()
   }
 
 }
+
+void syslog(char *message)
+{
+  if (Settings.Syslog_IP[0] != 0)
+    {
+      IPAddress broadcastIP(Settings.Syslog_IP[0],Settings.Syslog_IP[1],Settings.Syslog_IP[2],Settings.Syslog_IP[3]);
+      portTX.beginPacket(broadcastIP,514);
+      char str[80];
+      str[0]=0;
+      sprintf(str,"<7>ESP Unit: %u : %s",Settings.Unit,message);
+      Serial.print("SYSLG: ");
+      Serial.println(str);
+      portTX.write(str);
+      portTX.endPacket();
+    }
+}
+
+void delayedReboot(int rebootDelay)
+  {
+    while (rebootDelay !=0 )
+    {
+      Serial.print(F("Delayed Reset "));
+      Serial.println(rebootDelay);
+      rebootDelay--;
+      delay(1000);
+    }
+    ESP.reset();
+  }
 

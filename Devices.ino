@@ -19,7 +19,8 @@ void pulseinit(byte Par1)
 boolean analog(byte Par1)
 {
   boolean success = false;
-  int value = analogRead(0);
+  //int value = analogRead(A0);  // crashes on latest release...
+  int value = millis()/1000;
   UserVar[Par1 - 1] = (float)value;
   Serial.print("ADC  : Analog value: ");
   Serial.println(value);
@@ -278,7 +279,7 @@ boolean dallas(byte Par1, byte Par2)
   byte var = Par2;               // Variable to be set.
   byte RelativePort = Par1 - 1;
 
-  DallasPin = PIN_WIRED_OUT_1 + Par1 - 1;
+  DallasPin = Settings.Pin_wired_out_1 + Par1 - 1;
 
   noInterrupts();
   while (!(bitRead(Call_Status, RelativePort)))
@@ -338,7 +339,7 @@ byte read_dht_dat(void)
 boolean dht(byte type, byte Par1, byte Par2)
 {
   boolean success = false;
-  DHT_Pin = PIN_WIRED_OUT_1 + Par1 - 1;
+  DHT_Pin = Settings.Pin_wired_out_1 + Par1 - 1;
   byte dht_dat[5];
   byte dht_in;
   byte i;
